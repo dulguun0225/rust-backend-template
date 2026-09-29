@@ -7,6 +7,8 @@ node = "24.21.0"
 "github:sbdchd/squawk" = "2.66.0"
 # Source rules: the serde rules under rules/ast-grep (sgconfig.yml).
 ast-grep = "0.45.3"
+# Secrets in the files git would commit and in the change's commits (scripts/secrets.mjs).
+gitleaks = "8.30.1"
 # Advisories, licences, bans, sources (deny.toml).
 cargo-deny = "0.20.2"
 # Unused dependencies.

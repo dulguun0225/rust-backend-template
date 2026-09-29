@@ -94,6 +94,6 @@ function canary() {
 
 main(() => {
   canary();
-  run('cargo', ['deny', '--all-features', 'check'], { cwd: repo });
+  run('cargo', ['deny', '--locked', '--all-features', 'check'], { cwd: repo });
   console.log(`cargo-deny: advisories, bans, licenses and sources ok (${capture('cargo', ['deny', '--version'], { cwd: repo })})`);
 });

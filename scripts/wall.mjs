@@ -3,8 +3,9 @@
 // PostgreSQL server), the toolchain rust-toolchain.toml pins (rustup), the tools mise.toml pins
 // (`mise install`), and network for crates the first build downloads.
 // Usage: node scripts/wall.mjs [base-sha]
-//   The base scopes squawk, the applied-migration check, the OpenAPI breaking-change diff and mutation testing
-//   to the change; without one, squawk lints every migration and the other three have nothing to compare.
+//   The base scopes squawk, the applied-migration check, the OpenAPI breaking-change diff, mutation testing and
+//   the commit-range secrets scan to the change; without one, squawk lints every migration and the other four
+//   have nothing to compare.
 import fs from 'node:fs';
 import path from 'node:path';
 import { capture, captureAll, main, readText, run, Fail } from './_lib.mjs';
@@ -27,13 +28,19 @@ main(() => {
   step('Toolchain: rust-toolchain.toml, and the tools mise.toml pins');
   toolchain();
 
-  step('Lint configuration: no cap-lints or flag overrides, every member inherits the lints, no cfg(clippy), no suppressed ban lint, scopes generated');
+  step('Cargo.lock: current for every manifest, before any step that resolves could rewrite it');
+  lockfile();
+
+  step('Lint configuration: no lint, flag or profile override, members in crates/ inheriting the lints, no code clippy cannot read, no suppressed ban lint, scopes generated');
   script('check-lint-config.mjs', '--selftest');
   script('check-lint-config.mjs');
 
   step('Suppression inventory (suppressions.txt)');
   script('check-suppressions.mjs', '--selftest');
   script('check-suppressions.mjs');
+
+  step('Secrets: gitleaks over the files git would commit and the commits since the base');
+  script('secrets.mjs', base);
 
   step('Source rules: rustfmt, ast-grep serde rules');
   script('source-rules.mjs');
@@ -98,6 +105,7 @@ function toolchain() {
     ['squawk', ['--version']],
     ['ast-grep', ['--version']],
     ['vacuum', ['version']],
+    ['gitleaks', ['version']],
     ['oasdiff', ['--version']],
     ['sqlx', ['--version']],
     ['cargo', ['deny', '--version']],
@@ -116,12 +124,36 @@ function toolchain() {
   console.log(`${rustc}; every pinned tool present`);
 }
 
+/**
+ * `cargo metadata --locked` over the workspace, first: a step that resolves without --locked (cargo-deny's did)
+ * rewrites a stale Cargo.lock, and every --locked step after it then passes over a lock the commit lacks.
+ * Its canary: a workspace whose manifest declares a crate its Cargo.lock lacks must be refused.
+ */
+function lockfile() {
+  const work = path.join(root, 'target', 'lock-canary');
+  fs.rmSync(work, { recursive: true, force: true });
+  fs.mkdirSync(path.join(work, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(work, 'Cargo.toml'), '[package]\nname = "lock-canary"\nversion = "0.0.0"\nedition = "2024"\npublish = false\n\n[workspace]\n\n[dependencies]\nitoa = "1"\n');
+  fs.writeFileSync(path.join(work, 'src', 'lib.rs'), '');
+  fs.writeFileSync(path.join(work, 'Cargo.lock'), 'version = 4\n');
+  const canary = captureAll('cargo', ['metadata', '--locked', '--offline', '--format-version', '1'], { cwd: work });
+  if (canary.status === 0 || !/--locked was passed/.test(canary.stderr)) {
+    throw new Fail(`cargo metadata --locked did not refuse a Cargo.lock that lacks a declared crate (exit ${canary.status}):\n${canary.stderr}`);
+  }
+  const r = captureAll('cargo', ['metadata', '--locked', '--format-version', '1']);
+  if (r.status !== 0) throw new Fail(`Cargo.lock is not current for the manifests; run cargo to update it and commit it:\n${r.stderr}`, r.status);
+  console.log('Cargo.lock is current; the canary, a lock that lacks a declared crate, was refused');
+}
+
 function clippy() {
   const r = captureAll('cargo', ['clippy', '--workspace', '--all-targets', '--all-features', '--locked'], { env: { SQLX_OFFLINE: 'true' } });
   process.stderr.write(r.stderr);
   if (r.status !== 0) throw new Fail(`cargo clippy exited ${r.status}`, r.status);
   // A misspelled ban path is only this warning, exit 0 even under -D warnings.
   if (/does not refer to/.test(r.stderr)) throw new Fail('clippy.toml names a path that does not refer to anything (see the warning above)');
+  // Every warning is denied, so a warning that still prints is a lint someone lowered to warn, or cargo
+  // setting aside part of the configuration; either way clippy exited 0 over it.
+  if (/^warning: /m.test(r.stderr)) throw new Fail('cargo clippy printed a warning (see above): with every warning denied, one that prints was lowered, or cargo ignored configuration');
 }
 
 function coverage(env) {
