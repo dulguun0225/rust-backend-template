@@ -5,8 +5,9 @@
 //                                           configuration files, the gates' own scripts, fixtures and canaries,
 //                                           and the root Cargo.toml's [workspace], lint and profile tables
 //   suppress <file> <text>                  every allow or expect attribute (outer, inner, cfg_attr), every
-//                                           #[ignore] test and every #[rustfmt::skip] in first-party Rust, and
-//                                           every squawk-ignore comment in a migration
+//                                           #[ignore] test and every #[rustfmt::skip] in first-party Rust,
+//                                           every squawk-ignore comment in a migration, and every entry in
+//                                           .trivyignore with the reason on the line above it
 // A regenerated inventory that differs from the committed one fails, printing the difference; `--write`
 // rewrites it. It makes an edit visible in the change that makes it; it refuses none, since the same change can
 // rewrite it. Files Renovate moves (mise.toml, the Dockerfile, the workflows, [workspace.dependencies]) are not
@@ -25,6 +26,7 @@ import { tableText } from './_toml.mjs';
 const CONFIG_FILES = [
   '.cargo/config.toml',
   '.squawk.toml',
+  '.trivyignore',
   'clippy.toml',
   'clippy-scopes.toml',
   'deny.toml',
@@ -85,6 +87,15 @@ export function inventory(root) {
         if (/squawk-ignore/.test(line)) suppressions.push(`suppress ${f} ${line.trim()}`);
       });
   }
+  const trivyignore = path.join(root, '.trivyignore');
+  if (fs.existsSync(trivyignore)) {
+    const lines = readText(trivyignore).split('\n').map((l) => l.trim());
+    lines.forEach((line, i) => {
+      if (line === '' || line.startsWith('#')) return;
+      const reason = /^#\s*(\S.*)$/.exec(lines[i - 1] ?? '')?.[1];
+      suppressions.push(`suppress .trivyignore ${line}${reason ? `  # ${reason}` : ''}`);
+    });
+  }
   return [...out, ...suppressions.sort()];
 }
 
@@ -121,6 +132,9 @@ function selftest() {
       if (!suppressed.some((l) => l.startsWith(`+ suppress crates/a/src/lib.rs ${want}`))) problems.push(`a new ${want} attribute was not reported`);
     }
     write(dir);
+    fs.writeFileSync(path.join(dir, '.trivyignore'), '# no fixed package yet\nCVE-2026-0001 exp:2026-12-31\n');
+    if (!inventoryDiff(dir).some((l) => l === '+ suppress .trivyignore CVE-2026-0001 exp:2026-12-31  # no fixed package yet')) problems.push('a new .trivyignore entry was not reported with its reason');
+    write(dir);
     fs.writeFileSync(path.join(dir, 'clippy.toml'), 'disallowed-methods = []\nallow-unwrap-in-tests = true\n');
     if (!inventoryDiff(dir).some((l) => l.startsWith('+ config clippy.toml'))) problems.push('an edited clippy.toml was not reported');
     write(dir);
@@ -142,7 +156,7 @@ function selftest() {
     fs.rmSync(dir, { recursive: true, force: true });
   }
   report(problems, 'suppression selftest case(s) failed');
-  console.log('suppression selftest: a new expect, ignore and rustfmt::skip, an edited clippy.toml, lint table, profile table, script and fixture tree are each reported; a moved digest is not');
+  console.log('suppression selftest: a new expect, ignore, rustfmt::skip and .trivyignore entry, an edited clippy.toml, lint table, profile table, script and fixture tree are each reported; a moved digest is not');
 }
 
 main(() => {

@@ -1,7 +1,8 @@
 // The backend wall, as one command: the definition of done. The template's own CI and a project's `backend`
 // job both run exactly this, so the two cannot drift on what "green" means. Needs Docker (a throwaway
-// PostgreSQL server), the toolchain rust-toolchain.toml pins (rustup), the tools mise.toml pins
-// (`mise install`), and network for crates the first build downloads.
+// PostgreSQL server, and the service image the scan reads), the toolchain rust-toolchain.toml pins (rustup), the
+// tools mise.toml pins (`mise install`), and network for crates the first build downloads and for trivy's
+// vulnerability database.
 // Usage: node scripts/wall.mjs [base-sha]
 //   The base scopes squawk, the applied-migration check, the OpenAPI breaking-change diff, mutation testing and
 //   the commit-range secrets scan to the change; without one, squawk lints every migration and the other four
@@ -93,6 +94,10 @@ main(() => {
     stopPostgres(db.id);
   }
 
+  step('Image: the Dockerfile built as <binary>:wall, trivy over it; HIGH and CRITICAL fail, fixed or not');
+  script('image-scan.mjs', '--selftest');
+  script('image-scan.mjs');
+
   step(`backend wall green in ${Math.round((Date.now() - started) / 1000)} s`);
 });
 
@@ -106,6 +111,7 @@ function toolchain() {
     ['ast-grep', ['--version']],
     ['vacuum', ['version']],
     ['gitleaks', ['version']],
+    ['trivy', ['--version']],
     ['oasdiff', ['--version']],
     ['sqlx', ['--version']],
     ['cargo', ['deny', '--version']],

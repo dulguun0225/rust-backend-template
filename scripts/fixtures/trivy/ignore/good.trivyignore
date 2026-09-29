@@ -1,0 +1,6 @@
+# A header comment, then a blank line.
+
+# no fixed release in trixie; the affected function is not reachable from the service
+CVE-2026-0001 exp:2026-12-31
+# a Debian temporary identifier, reason on the line above
+TEMP-0841856-B18BAF exp:2027-01-15

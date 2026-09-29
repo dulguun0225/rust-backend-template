@@ -71,6 +71,9 @@ the project `CLAUDE.md` it lifts and, in a standalone service, in this line.
   `backend/` inside a project, otherwise this directory); blank lines and `#` lines are skipped, a listed path
   that does not exist or a script that exits non-zero fails the wall, and with no such file the step runs
   nothing. The template ships none.
+- The wall builds the service image from the `Dockerfile` and trivy scans it; a HIGH or CRITICAL vulnerability
+  fails it, fixed or not. Move the base image digest or the dependency; failing that, a `.trivyignore` entry,
+  `<id> exp:<yyyy-mm-dd>` below a `#` line giving the reason, then `node scripts/check-suppressions.mjs --write`.
 - `cargo fmt --all` formats. `node scripts/db.mjs prepare` rewrites `.sqlx` after a query or a migration
   changes; commit it. Builds read `.sqlx` with `SQLX_OFFLINE=true`; `node scripts/db.mjs start` gives a
   migrated server for `cargo test` (`DATABASE_URL=… SQLX_OFFLINE=true cargo test --workspace`).

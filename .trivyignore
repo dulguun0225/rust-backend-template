@@ -1,0 +1,9 @@
+# The image-scan suppression inventory (scripts/image-scan.mjs): committed, listed in suppressions.txt, and the
+# only place a HIGH or CRITICAL vulnerability in the service image may be accepted. One entry per line,
+# `<vulnerability id> exp:<yyyy-mm-dd>`, directly below a `#` line giving its reason; after the expiry trivy
+# reports it again. Empty is the desired state. Prefer moving the base image digest in the Dockerfile to
+# suppressing; an entry here is for a vulnerability with no fixed package in the base yet.
+#
+# Example:
+# # no fixed package in trixie; the affected function is not reachable from the service
+# # CVE-2026-0001 exp:2026-10-29

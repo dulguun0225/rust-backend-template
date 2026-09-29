@@ -6,8 +6,8 @@ on axum, sqlx and PostgreSQL 18, edition 2024, with every build gate of the Rust
 shown failing, and green. A new service spends its first tokens on domain code, not on scaffolding.
 
 The record and the skills carry the decisions and the reasoning. This repo carries the consequences: the
-workspace, the lint table, the ban list, the source rules, the migration lint, the contract snapshots, and one
-wall script. The scripts are Node, not bash, so the wall and the scaffold run the same on Linux, macOS and
+workspace, the lint table, the ban list, the source rules, the migration lint, the contract snapshots, the
+image scan, and one wall script. The scripts are Node, not bash, so the wall and the scaffold run the same on Linux, macOS and
 Windows; no script has a dependency to install. `docs/GATES.md` maps each gate to what it implements and to
 what shows it failing, and lists, by name, what no gate here reaches.
 
@@ -43,8 +43,8 @@ later gate changes in; expect to resolve the name when it does.
 template's own `.github/workflows/ci.yml` is the service's CI.
 
 Toolchain: rustup reads `rust-toolchain.toml`; `mise install` reads `mise.toml` (Node, squawk, ast-grep,
-gitleaks, cargo-deny, cargo-shear, cargo-llvm-cov, cargo-mutants, oasdiff, vacuum, sqlx-cli). Docker is needed
-for the wall.
+gitleaks, trivy, cargo-deny, cargo-shear, cargo-llvm-cov, cargo-mutants, oasdiff, vacuum, sqlx-cli). Docker is
+needed for the wall: it runs the PostgreSQL server and builds the image trivy scans.
 
 ## What is in the box
 
@@ -58,7 +58,7 @@ for the wall.
 | `crates/server` | The binary: configuration, logging, pool, migrations, listener |
 | `migrations/`, `.sqlx/` | sqlx migrations; the committed query metadata builds read offline |
 | `openapi/v1.json`, `snapshots/error-catalog.txt` | The committed contract and error catalog the tests diff |
-| `clippy.toml`, `clippy-scopes.toml`, `deny.toml`, `layering.toml`, `table-owners.toml`, `.squawk.toml`, `sgconfig.yml`, `rules/` | Gate configuration, each file hashed in `suppressions.txt` with the scripts, fixtures and canaries |
+| `clippy.toml`, `clippy-scopes.toml`, `deny.toml`, `layering.toml`, `table-owners.toml`, `.squawk.toml`, `sgconfig.yml`, `.trivyignore`, `rules/` | Gate configuration, each file hashed in `suppressions.txt` with the scripts, fixtures and canaries |
 | `canaries/bans` | One marked violation per ban and per denied or forbidden lint |
 | `scripts/wall.mjs` | The whole wall as one command; the template's CI and a project's `backend` job both run it |
 | `scripts/` | The wall's parts, each with its selftest or canary; `fixtures/` holds their negative inputs; `init.mjs`; `db.mjs` for a local database and `.sqlx` |
@@ -84,7 +84,9 @@ tokio 1.53.1, axum 0.8.9, tower 0.5.3, tower-http 0.7.1, http-body-util 0.1.5, u
 0.9.0 depends on 0.22 and a second version is a duplicate `deny.toml` refuses. Tools: Node 24.21.0 (the newest
 LTS line; 26.10.0 is current, not LTS), squawk 2.66.0, ast-grep 0.45.3, gitleaks 8.30.1, cargo-deny 0.20.2, cargo-shear 1.14.0,
 cargo-llvm-cov 0.9.1, cargo-mutants 27.1.0, oasdiff 1.32.1, vacuum 0.30.6, sqlx-cli 0.9.0, mise 2026.9.16
-(GitHub releases). PostgreSQL 18.6 (`postgres:18.6-alpine`, 2026-09-21, pinned by digest), the major
+(GitHub releases); trivy 0.74.0 (2026-08-14), an immutable GitHub release outside Aqua's 2026-03 supply-chain
+advisory (GHSA-69fq-xp46-6x23: binaries v0.69.4 only), its archive checked by mise against the release
+checksums and their sigstore bundle, signed by trivy's release workflow at the tag. PostgreSQL 18.6 (`postgres:18.6-alpine`, 2026-09-21, pinned by digest), the major
 java-backend-template uses. Images `rust:1.98.1-slim-trixie` and `gcr.io/distroless/cc-debian13:nonroot`,
 by digest. Actions `actions/checkout` v7.0.1, `jdx/mise-action` v5.0.0, `actions/cache` v6.1.0,
 `actions/upload-artifact` v7.0.1, by SHA. Where these differ from the record (cargo-deny's release, which the
@@ -92,5 +94,5 @@ record left unestablished; vacuum 0.30.6 against java-backend-template's 0.30.5)
 
 Every gate was run green with `node scripts/wall.mjs` on 2026-09-29, on Linux with Docker 29.8.1; the runs the
 record owed are recorded in `docs/GATES.md` and in the skills repo. The template's own GitHub Actions workflow
-ran green on `e230ed9` (run 36506117148, 2026-09-29). The project-root workflow and GitLab CI are unrun: correct
+ran green on `c7e4ce2` (run 36511569716, 2026-09-29). The project-root workflow and GitLab CI are unrun: correct
 by reading, their actions SHA-pinned.

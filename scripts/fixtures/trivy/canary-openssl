@@ -1,0 +1,6 @@
+Package: openssl
+Source: openssl
+Version: 3.5.1-1
+Architecture: amd64
+Maintainer: image-scan canary
+Description: a dpkg record for an openssl older than every fix in the trivy database

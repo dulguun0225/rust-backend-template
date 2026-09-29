@@ -3,10 +3,10 @@
 # toolchain is what backend/rust-toolchain.toml pins, installed by rustup; every other tool is what
 # backend/mise.toml pins, installed by mise, exactly as on a developer machine.
 #
-# Runner requirement: the wall starts a throwaway PostgreSQL container. This file uses the docker:dind service,
-# which needs a docker-executor runner with `privileged = true`; the container's port is published on the `docker`
-# host, which WALL_DB_HOST names. On a shell runner with Docker installed, drop the `services` block and the
-# DOCKER_* and WALL_DB_HOST variables.
+# Runner requirement: the wall starts a throwaway PostgreSQL container and builds the service image it scans.
+# This file uses the docker:dind service, which needs a docker-executor runner with `privileged = true`; the
+# container's port is published on the `docker` host, which WALL_DB_HOST names. On a shell runner with Docker
+# installed, drop the `services` block and the DOCKER_* and WALL_DB_HOST variables.
 
 stages: [wall]
 
@@ -31,6 +31,7 @@ variables:
   DOCKER_HOST: tcp://docker:2375
   DOCKER_TLS_CERTDIR: ""
   WALL_DB_HOST: docker
+  TRIVY_CACHE_DIR: $CI_PROJECT_DIR/backend/target/trivy-cache # trivy's database, cached with backend/target
 
 .mise:
   image: ubuntu:24.04
