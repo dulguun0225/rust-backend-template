@@ -38,7 +38,7 @@ jobs:
         with:
           version: 2026.9.16
       - name: Actions are SHA-pinned (template's own workflow and the project-root one it ships)
-        run: node project-root/scripts/check-action-pins.mjs . && node project-root/scripts/check-action-pins.mjs project-root
+        run: node project-root/scripts/check-action-pins.mjs --selftest && node project-root/scripts/check-action-pins.mjs . && node project-root/scripts/check-action-pins.mjs project-root
       - name: Backend wall
         run: node scripts/wall.mjs "${{ github.event.pull_request.base.sha || github.event.before }}"
       - name: Keep the verdict artifacts

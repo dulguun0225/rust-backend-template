@@ -45,7 +45,7 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
         run: test "$HEAD_REF" = dev || { echo "::error::main takes pull requests from dev only, not from $HEAD_REF"; exit 1; }
       - name: Actions are SHA-pinned
-        run: node scripts/check-action-pins.mjs
+        run: node scripts/check-action-pins.mjs --selftest && node scripts/check-action-pins.mjs
       - name: Backend wall
         working-directory: backend
         run: node scripts/wall.mjs "${{ github.event.pull_request.base.sha || github.event.before }}"
