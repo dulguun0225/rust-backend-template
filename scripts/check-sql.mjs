@@ -9,6 +9,8 @@
 //   order-by-id                  an ORDER BY whose first key is the `id` column: a time-ordered key is not an
 //                                ordering; it is only the final tiebreak
 //   offset                       OFFSET: pages are keyset only
+//   optional-predicate           `$n IS NULL OR …`: under a generic plan the predicate is a filter, not an index
+//                                condition, so a keyset seek reads every row before its page; write two statements
 //   clock-in-sql                 now(), current_timestamp and their kin, and the 'now', 'today', 'tomorrow' and
 //                                'yesterday' inputs: time comes from the injected clock
 //   id-in-sql                    gen_random_uuid(), uuidv4(), uuidv7(), uuid_generate_*(), random(),
@@ -130,6 +132,7 @@ export function sqlFindings(root, { inventory = false } = {}) {
     if (targets.length > 0 && q.fn) writingFns.set(`${q.file}#${q.fn}`, feature);
     if (/\border by (?:[a-z_][a-z0-9_]*\.)*id\b/.test(sql)) findings.push(`order-by-id ${at}: ${sql}`);
     if (/\boffset\b/.test(sql)) findings.push(`offset ${at}: ${sql}`);
+    if (/\$\d+(?:::[a-z_ ]+?)? is null or\b/.test(sql)) findings.push(`optional-predicate ${at}: ${sql}`);
     if (/\b(now ?\(|current_timestamp\b|current_date\b|current_time\b|localtimestamp\b|localtime\b|clock_timestamp ?\(|statement_timestamp ?\(|transaction_timestamp ?\(|timeofday ?\()|'(now|today|tomorrow|yesterday)'/.test(sql)) {
       findings.push(`clock-in-sql ${at}: ${sql}`);
     }
@@ -171,7 +174,7 @@ function selftest(repo) {
       problems.push(`fixture ${name}: expected ${name === 'good' ? 'no finding' : `only ${rule}`}, got:\n  ${findings.join('\n  ') || '(none)'}`);
     }
   }
-  const expected = ['clock-in-sql', 'foreign-table-in-writing-fn', 'foreign-write', 'good', 'id-in-sql', 'offset', 'order-by-id', 'sqlx-inventory', 'unowned-table', 'versioned-update', 'write-outside-feature', 'write-outside-store'];
+  const expected = ['clock-in-sql', 'foreign-table-in-writing-fn', 'foreign-write', 'good', 'id-in-sql', 'offset', 'optional-predicate', 'order-by-id', 'sqlx-inventory', 'unowned-table', 'versioned-update', 'write-outside-feature', 'write-outside-store'];
   for (const e of expected) if (!cases.some((c) => c.split('--')[0] === e)) problems.push(`fixture ${e} is missing`);
   report(problems, 'SQL fixture(s) not refused as expected');
   console.log(`sql selftest: ${cases.length} fixtures, each refused by its rule alone (good: none)`);
