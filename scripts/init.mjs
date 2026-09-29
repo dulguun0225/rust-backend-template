@@ -35,6 +35,9 @@ const RESERVED = new Set([
   'std', 'core', 'alloc', 'test', 'proc_macro',
   // Cargo's own directories under target/<profile>/, which a binary of that name would collide with
   'build', 'deps', 'examples', 'incremental',
+  // Windows device names: no file, so no binary, may carry one
+  'con', 'prn', 'aux', 'nul', 'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+  'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
 ]);
 
 /** [file, pattern, replacement]: every place the service's name is a name. Each must match at least once. */
