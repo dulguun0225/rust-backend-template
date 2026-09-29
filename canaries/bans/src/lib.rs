@@ -28,9 +28,14 @@ pub fn blocking() {
     let _m = std::fs::symlink_metadata("x"); // expect: ban:std::fs::symlink_metadata
     let _n = std::fs::canonicalize("x"); // expect: ban:std::fs::canonicalize
     let _o = std::fs::exists("x"); // expect: ban:std::fs::exists
+    let _s = std::fs::hard_link("x", "y"); // expect: ban:std::fs::hard_link
+    let _t = std::fs::read_link("x"); // expect: ban:std::fs::read_link
+    let _u = std::fs::metadata("x").map(|m| std::fs::set_permissions("x", m.permissions())); // expect: ban:std::fs::metadata ban:std::fs::set_permissions
     let _p = std::fs::File::open("x"); // expect: ban:std::fs::File::open
     let _q = std::fs::File::create("x"); // expect: ban:std::fs::File::create
+    let _v = std::fs::File::create_new("x"); // expect: ban:std::fs::File::create_new
     let _r = std::fs::OpenOptions::new().open("x"); // expect: ban:std::fs::OpenOptions::open
+    let _w = std::fs::DirBuilder::new().create("x"); // expect: ban:std::fs::DirBuilder::create
 }
 
 // ---- disallowed-methods: clock and ids ----
@@ -41,6 +46,8 @@ pub fn clock_and_ids() {
     let _c = time::UtcDateTime::now(); // expect: ban:time::UtcDateTime::now
     let _d = uuid::Uuid::now_v7(); // expect: ban:uuid::Uuid::now_v7
     let _e = uuid::Uuid::new_v7(uuid::Timestamp::from_unix_time(0, 0, 0, 0)); // expect: ban:uuid::Uuid::new_v7
+    let _f = std::time::UNIX_EPOCH.elapsed(); // expect: ban:std::time::SystemTime::elapsed
+    let _g = uuid::Timestamp::now(uuid::NoContext); // expect: ban:uuid::Timestamp::now
 }
 
 // ---- disallowed-methods: unchecked SQL and transactions outside db::Tx ----
@@ -69,6 +76,17 @@ pub async fn sql(pool: &sqlx::PgPool, conn: &mut sqlx::PgConnection) {
     let _t = sqlx::Connection::begin(conn).await; // expect: ban:sqlx::Connection::begin
     let _u = sqlx::Acquire::begin(pool).await; // expect: ban:sqlx::Acquire::begin
     let _v = sqlx::Acquire::acquire(pool).await; // expect: ban:sqlx::Acquire::acquire
+    let _w = sqlx::PgPool::connect("x").await; // expect: ban:sqlx::Pool::connect
+    let _x = sqlx::PgPool::connect_with(sqlx::postgres::PgConnectOptions::new()).await; // expect: ban:sqlx::Pool::connect_with
+    let _y = sqlx::PgPool::connect_lazy("x"); // expect: ban:sqlx::Pool::connect_lazy
+    let _z = sqlx::PgPool::connect_lazy_with(sqlx::postgres::PgConnectOptions::new()); // expect: ban:sqlx::Pool::connect_lazy_with
+    let options = sqlx::postgres::PgPoolOptions::new;
+    let _pa = options().connect("x").await; // expect: ban:sqlx::pool::PoolOptions::connect
+    let _pb = options().connect_with(sqlx::postgres::PgConnectOptions::new()).await; // expect: ban:sqlx::pool::PoolOptions::connect_with
+    let _pc = options().connect_lazy("x"); // expect: ban:sqlx::pool::PoolOptions::connect_lazy
+    let _pd = options().connect_lazy_with(sqlx::postgres::PgConnectOptions::new()); // expect: ban:sqlx::pool::PoolOptions::connect_lazy_with
+    let _ca = <sqlx::PgConnection as sqlx::Connection>::connect("x").await; // expect: ban:sqlx::Connection::connect
+    let _cb = <sqlx::PgConnection as sqlx::Connection>::connect_with(&sqlx::postgres::PgConnectOptions::new()).await; // expect: ban:sqlx::Connection::connect_with
 }
 
 // ---- disallowed-methods: routes outside OpenApiRouter::routes ----
@@ -138,6 +156,7 @@ pub struct Types {
     pub e: sqlx::QueryBuilder<sqlx::Postgres>, // expect: ban:sqlx::QueryBuilder
     pub f: axum::extract::RawForm, // expect: ban:axum::extract::RawForm
     pub g: axum::body::Bytes, // expect: ban:axum::body::Bytes
+    pub h: uuid::Builder, // expect: ban:uuid::Builder
 }
 
 // ---- disallowed-macros ----

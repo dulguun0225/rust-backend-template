@@ -37,13 +37,20 @@ disallowed-methods = [
   { path = "std::fs::symlink_metadata", reason = "blocking file I/O; use tokio::fs" },
   { path = "std::fs::canonicalize", reason = "blocking file I/O; use tokio::fs" },
   { path = "std::fs::exists", reason = "blocking file I/O; use tokio::fs" },
+  { path = "std::fs::hard_link", reason = "blocking file I/O; use tokio::fs" },
+  { path = "std::fs::read_link", reason = "blocking file I/O; use tokio::fs" },
+  { path = "std::fs::set_permissions", reason = "blocking file I/O; use tokio::fs" },
   { path = "std::fs::File::open", reason = "blocking file I/O; use tokio::fs" },
   { path = "std::fs::File::create", reason = "blocking file I/O; use tokio::fs" },
+  { path = "std::fs::File::create_new", reason = "blocking file I/O; use tokio::fs" },
   { path = "std::fs::OpenOptions::open", reason = "blocking file I/O; use tokio::fs" },
+  { path = "std::fs::DirBuilder::create", reason = "blocking file I/O; use tokio::fs" },
   # Time comes from the injected platform::clock::Clock.
   { path = "std::time::SystemTime::now", reason = "a wall-clock read; take the injected platform::clock::Clock" },
+  { path = "std::time::SystemTime::elapsed", reason = "a wall-clock read; take the injected platform::clock::Clock" },
   { path = "time::OffsetDateTime::now_utc", reason = "a wall-clock read; take the injected platform::clock::Clock" },
   { path = "time::UtcDateTime::now", reason = "a wall-clock read; take the injected platform::clock::Clock" },
+  { path = "uuid::Timestamp::now", reason = "a wall-clock read; take the injected platform::clock::Clock" },
   # Ids come from platform::ids::new_id.
   { path = "uuid::Uuid::now_v7", reason = "ids come from platform::ids::new_id" },
   { path = "uuid::Uuid::new_v7", reason = "ids come from platform::ids::new_id" },
@@ -71,6 +78,17 @@ disallowed-methods = [
   { path = "sqlx::Connection::begin", reason = "transactions are opened by db::Tx only" },
   { path = "sqlx::Acquire::begin", reason = "transactions are opened by db::Tx only" },
   { path = "sqlx::Acquire::acquire", reason = "connections are taken by db::Tx only" },
+  # A pool made anywhere but db runs a checked query outside any transaction: query!(…).execute(&pool).
+  { path = "sqlx::Pool::connect", reason = "the pool is db's; statements run through db::Tx" },
+  { path = "sqlx::Pool::connect_with", reason = "the pool is db's; statements run through db::Tx" },
+  { path = "sqlx::Pool::connect_lazy", reason = "the pool is db's; statements run through db::Tx" },
+  { path = "sqlx::Pool::connect_lazy_with", reason = "the pool is db's; statements run through db::Tx" },
+  { path = "sqlx::pool::PoolOptions::connect", reason = "the pool is db's; statements run through db::Tx" },
+  { path = "sqlx::pool::PoolOptions::connect_with", reason = "the pool is db's; statements run through db::Tx" },
+  { path = "sqlx::pool::PoolOptions::connect_lazy", reason = "the pool is db's; statements run through db::Tx" },
+  { path = "sqlx::pool::PoolOptions::connect_lazy_with", reason = "the pool is db's; statements run through db::Tx" },
+  { path = "sqlx::Connection::connect", reason = "the pool is db's; statements run through db::Tx" },
+  { path = "sqlx::Connection::connect_with", reason = "the pool is db's; statements run through db::Tx" },
   # A route registered outside OpenApiRouter::routes serves traffic and is missing from the document.
   { path = "axum::Router::route", reason = "register routes with OpenApiRouter::routes(routes!(...))" },
   { path = "axum::Router::route_service", reason = "register routes with OpenApiRouter::routes(routes!(...))" },
@@ -118,6 +136,7 @@ disallowed-types = [
   { path = "sqlx::QueryBuilder", reason = "runtime-built SQL is unchecked; use sqlx::query!" },
   { path = "axum::extract::RawForm", reason = "request bodies bind as web::body::StrictJson" },
   { path = "axum::body::Bytes", reason = "request bodies bind as web::body::StrictJson" },
+  { path = "uuid::Builder", reason = "ids come from platform::ids::new_id" },
 ]
 
 disallowed-macros = [

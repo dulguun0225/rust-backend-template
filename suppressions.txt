@@ -3,8 +3,8 @@
 # difference; `node scripts/check-suppressions.mjs --write` rewrites it. A change here is a change to what
 # the gates refuse: make it in its own commit, and say why.
 config .squawk.toml sha256:71d98b086c75f7ac63e248364dfb51dab5305bf3b864beb5ab2b6c4b8c8a0ac2
-config clippy-scopes.toml sha256:496b4e6adbcdfea1e222d83c4ef10673c7dec74db361a656d1f3254adc555f23
-config clippy.toml sha256:995d6713e4af9c3a09b196f9323af2e8642f81a11348b62ad52b1be9a545a167
+config clippy-scopes.toml sha256:e39f3851ef4e1576862b6d13b33f3ebe55a6c9c0023116f13cfc6f54fbe0b841
+config clippy.toml sha256:98745214600f01da36f198dc2d599a1cd662db87fe84af2c11827eb082e2e1c1
 config crates/money-sql/sqlx.toml sha256:ccf5578ed0335737e9ede10f185a947dafe65f5a42c0cf60729b29b44611b0ee
 config crates/store/sqlx.toml sha256:b62fec853cb5e07e679c40ddd561cba5040cb6ef1c4a375872646433e659ce9f
 config deny.toml sha256:13e874dee328c82de259f47bc4125c7d3fb7b008a42c20911ef77ff2a7d4234f

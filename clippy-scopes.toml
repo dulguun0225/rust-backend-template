@@ -33,9 +33,10 @@ exempt = [
 ]
 
 [db]
-reason = "Tx, the one transaction seam"
+reason = "Tx, the one transaction seam, over the one pool"
 exempt = [
   "sqlx::Pool::begin_with",
+  "sqlx::pool::PoolOptions::connect",
 ]
 
 [web]
