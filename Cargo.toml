@@ -52,7 +52,7 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 serde_path_to_error = "=0.1.20"
 uuid = { version = "=1.26.1", features = ["v7", "serde"] }
-time = { version = "=0.3.55", features = ["serde", "formatting", "parsing"] }
+time = { version = "=0.3.55", features = ["serde", "formatting", "parsing", "macros"] }
 base64 = "=0.22.1"
 
 # Errors: thiserror in every library crate; anyhow only in the server binary (layering.toml, clippy.toml).
