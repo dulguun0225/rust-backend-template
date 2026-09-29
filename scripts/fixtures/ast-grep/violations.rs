@@ -17,3 +17,6 @@ pub struct Defaulted {
     #[serde(default)]
     pub count: u8,
 }
+
+// A renamed Deserialize derive.
+use serde::Deserialize as Lenient;

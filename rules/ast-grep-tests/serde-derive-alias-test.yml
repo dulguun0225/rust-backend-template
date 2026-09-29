@@ -1,0 +1,15 @@
+id: serde-derive-alias
+valid:
+  - |
+    use serde::Deserialize;
+  - |
+    use serde::{Deserialize, Serialize as _};
+  - |
+    use serde::de::DeserializeOwned as Owned;
+invalid:
+  - |
+    use serde::Deserialize as Lenient;
+  - |
+    use serde::{Deserialize as Lenient, Serialize};
+  - |
+    pub use serde_derive::Deserialize as D;

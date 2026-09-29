@@ -1,0 +1,10 @@
+# The other serde rules find a Deserialize type by the word Deserialize in its derive; a derive written
+# through a renamed import, `use serde::Deserialize as Lenient; #[derive(Lenient)]`, carries no such word.
+# Renaming Deserialize in a `use` is banned, so every derive of it spells the name.
+id: serde-derive-alias
+language: Rust
+severity: error
+message: Deserialize is not renamed in a use declaration; the serde rules find a derive by its name
+rule:
+  kind: use_declaration
+  regex: '\bDeserialize\s+as\b'
