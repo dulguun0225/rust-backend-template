@@ -4,7 +4,8 @@
 //! last row's exact position, so a malformed cursor fails loud rather than mis-seeking.
 //!
 //! A query pages with `WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
-//! fetching `limit + 1` rows, and hands them to [`to_page`].
+//! fetching `limit + 1` rows, and hands them to [`to_page`]; the first page is a second statement without the
+//! `WHERE`, since `$1 IS NULL OR …` is a filter under a generic plan and a deep page then reads every row before it.
 
 use std::num::NonZeroU16;
 

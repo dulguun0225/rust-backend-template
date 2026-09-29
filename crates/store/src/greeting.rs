@@ -85,6 +85,11 @@ pub async fn rename(tx: &mut WriteTx, id: Uuid, expected_version: i64, name: &st
 
 /// One page of greetings, newest first, after `cursor`: the keyset pager's query shape.
 ///
+/// Two statements rather than one with `$1 is null or …`: under a generic plan, which PostgreSQL may choose for a
+/// prepared statement after five runs, that predicate is a filter rather than an index condition, and a deep page
+/// reads every row before it, as `OFFSET` would (run 2026-09-29: 199,990 rows removed by the filter for a page near
+/// the end of 200,000; 4 buffers for the same page with the condition on the index).
+///
 /// # Errors
 /// [`DbError`].
 pub async fn page(
@@ -92,18 +97,33 @@ pub async fn page(
     cursor: Option<Cursor>,
     limit: NonZeroU16,
 ) -> Result<Page<GreetingRow>, DbError> {
-    let (after_at, after_id) = cursor.map_or((None, None), |c| (Some(c.sort), Some(c.id)));
-    let fetched = sqlx::query_as!(
-        GreetingRow,
-        "select id, name, created_at, version from greeting
-         where $1::timestamptz is null or (created_at, id) < ($1, $2)
-         order by created_at desc, id desc
-         limit $3",
-        after_at,
-        after_id,
-        i64::from(limit.get()).checked_add(1)
-    )
-    .fetch_all(tx.conn())
-    .await?;
+    let fetch = i64::from(limit.get()).checked_add(1);
+    let fetched = match cursor {
+        None => {
+            sqlx::query_as!(
+                GreetingRow,
+                "select id, name, created_at, version from greeting
+                 order by created_at desc, id desc
+                 limit $1",
+                fetch
+            )
+            .fetch_all(tx.conn())
+            .await?
+        }
+        Some(after) => {
+            sqlx::query_as!(
+                GreetingRow,
+                "select id, name, created_at, version from greeting
+                 where (created_at, id) < ($1, $2)
+                 order by created_at desc, id desc
+                 limit $3",
+                after.sort,
+                after.id,
+                fetch
+            )
+            .fetch_all(tx.conn())
+            .await?
+        }
+    };
     Ok(pager::to_page(fetched, limit, |row| Cursor { sort: row.created_at, id: row.id }))
 }

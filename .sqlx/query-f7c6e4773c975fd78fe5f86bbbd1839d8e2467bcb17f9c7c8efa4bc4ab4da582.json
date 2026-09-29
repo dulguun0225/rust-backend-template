@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "select id, name, created_at, version from greeting\n         where $1::timestamptz is null or (created_at, id) < ($1, $2)\n         order by created_at desc, id desc\n         limit $3",
+  "query": "select id, name, created_at, version from greeting\n                 where (created_at, id) < ($1, $2)\n                 order by created_at desc, id desc\n                 limit $3",
   "describe": {
     "columns": [
       {
@@ -62,5 +62,5 @@
       false
     ]
   },
-  "hash": "8504cddb9e2d1961c87c7c775126ed2f43f35f47393111bbcf87f8c14cdc8ff8"
+  "hash": "f7c6e4773c975fd78fe5f86bbbd1839d8e2467bcb17f9c7c8efa4bc4ab4da582"
 }
