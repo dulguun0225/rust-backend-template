@@ -111,8 +111,17 @@ mod tests {
     fn an_amount_beyond_i64_minor_units_is_refused() {
         assert_eq!(amount("92233720368547758.08").into_money(usd()), Err(MapError::Overflow));
         assert_eq!(amount("-92233720368547758.08").into_money(usd()), Ok(Money::from_minor(i64::MIN, usd())));
-        assert_eq!(amount("1e999999").into_money(usd()), Err(MapError::Overflow));
+        // Refused before any rescaling: rescaling this one would allocate a billion-digit integer.
+        assert_eq!(amount("1e999999999").into_money(usd()), Err(MapError::Overflow));
         assert_eq!(amount("12345678901234567890123").into_money(usd()), Err(MapError::Overflow));
+    }
+
+    #[test]
+    fn nineteen_integer_digits_fit_and_twenty_do_not() {
+        let jpy = Currency::from_code("JPY").unwrap();
+        assert_eq!(amount("9223372036854775807").into_money(jpy), Ok(Money::from_minor(i64::MAX, jpy)));
+        assert_eq!(amount("9223372036854775808").into_money(jpy), Err(MapError::Overflow));
+        assert_eq!(amount("10000000000000000000").into_money(jpy), Err(MapError::Overflow));
     }
 
     #[test]

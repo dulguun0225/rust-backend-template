@@ -105,6 +105,20 @@ proptest! {
         }
     }
 
+    /// Exact ties are rare among random inputs, so they are built: p = q·d + d/2 with d even.
+    #[test]
+    fn an_exact_tie_goes_where_its_mode_says(q in -1_000_000_000_i64..1_000_000_000, half in 1_i64..1_000_000) {
+        let d = i128::from(half).checked_mul(2).unwrap();
+        let q = i128::from(q);
+        let p = q.checked_mul(d).unwrap().checked_add(i128::from(half)).unwrap();
+        // p / d = q + 1/2: the neighbours are q and q + 1; toward zero is q when p > 0 and q + 1 when p < 0.
+        let (toward_zero, away) = if p > 0 { (q, q.checked_add(1).unwrap()) } else { (q.checked_add(1).unwrap(), q) };
+        let even = if q.checked_rem(2) == Some(0) { q } else { q.checked_add(1).unwrap() };
+        prop_assert_eq!(mul_div_round(p, 1, d, RoundingMode::HalfUp), Some(away));
+        prop_assert_eq!(mul_div_round(p, 1, d, RoundingMode::HalfDown), Some(toward_zero));
+        prop_assert_eq!(mul_div_round(p, 1, d, RoundingMode::HalfEven), Some(even));
+    }
+
     #[test]
     fn a_ratio_of_one_is_the_identity(m in money(), n in 1_i64..1_000_000, mode in mode()) {
         prop_assert_eq!(m.times_ratio(n, n, mode), Ok(m));

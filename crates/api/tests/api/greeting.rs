@@ -63,3 +63,12 @@ async fn every_refusal_is_one_validation_failed_and_opens_no_transaction(pool: P
     }
     assert_eq!(app.tx.begun(), 0);
 }
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_name_of_exactly_the_maximum_length_is_accepted(pool: PgPool) {
+    let app = app(pool);
+    let name = "x".repeat(api::greeting::NAME_MAX_CHARS);
+    let reply =
+        send(&app.router, json_request(Method::POST, "/api/greetings", &format!(r#"{{"name":"{name}"}}"#))).await;
+    assert_eq!(reply.status, 201, "{}", reply.text);
+}

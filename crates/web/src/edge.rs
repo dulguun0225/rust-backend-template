@@ -100,7 +100,6 @@ pub fn code_response(response: Response, incident: Option<Uuid>) -> Response {
         StatusCode::NOT_FOUND => ApiErrorCode::NotFound,
         StatusCode::METHOD_NOT_ALLOWED => ApiErrorCode::MethodNotAllowed,
         StatusCode::PAYLOAD_TOO_LARGE => ApiErrorCode::PayloadTooLarge,
-        StatusCode::UNSUPPORTED_MEDIA_TYPE => ApiErrorCode::UnsupportedMediaType,
         _ => return unhandled("a response with an uncoded error status", status, incident),
     };
     let allow = response.headers().get(header::ALLOW).cloned();

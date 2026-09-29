@@ -157,8 +157,24 @@ pub fn bind<T: DeserializeOwned + PartialSchema>(
     match serde_path_to_error::deserialize::<_, T>(Value::Object(accepted)) {
         Ok(value) => Bound { value: Some(value), failures },
         Err(e) => {
-            let at = e.path().iter().next().map_or_else(|| "/".to_owned(), |segment| pointer(&segment.to_string()));
-            failures.push(FieldError::new(at, ApiFieldCode::InvalidValue));
+            // An Option member marked `deserialize_with = "Deserialize::deserialize"` is not in the schema's
+            // required list, so its absence surfaces here, as serde's `missing field` error at the root.
+            let missing = e
+                .inner()
+                .to_string()
+                .strip_prefix("missing field `")
+                .and_then(|rest| rest.split('`').next().map(str::to_owned));
+            let failure = match missing {
+                Some(field) => FieldError::new(pointer(&field), ApiFieldCode::Required),
+                None => FieldError::new(
+                    e.path().iter().next().map_or_else(|| "/".to_owned(), |segment| pointer(&segment.to_string())),
+                    ApiFieldCode::InvalidValue,
+                ),
+            };
+            // A member already refused above is absent from what was deserialized; its failure stands alone.
+            if !failures.iter().any(|f| f.pointer == failure.pointer) {
+                failures.push(failure);
+            }
             Bound { value: None, failures }
         }
     }
@@ -193,8 +209,7 @@ fn expected_detail(json_type: &str) -> &'static str {
         "boolean" => "expected boolean",
         "integer" => "expected integer",
         "number" => "expected number",
-        "array" => "expected array",
-        "object" => "expected object",
+        // A request member is a scalar (crates/api/tests/api/openapi.rs), so no other type is ever expected.
         _ => "expected another type",
     }
 }
@@ -285,6 +300,8 @@ mod tests {
         ratio: f64,
         active: bool,
         id: uuid::Uuid,
+        #[serde(deserialize_with = "Deserialize::deserialize")]
+        nickname: Option<String>,
     }
 
     fn bound(json: &str, path: &[&str]) -> Bound<Probe> {
@@ -299,18 +316,38 @@ mod tests {
         }
     }
 
-    const GOOD: &str =
-        r#"{"givenName":"a","count":1,"ratio":0.5,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2"}"#;
+    const GOOD: &str = r#"{"givenName":"a","count":-1,"ratio":0.5,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","nickname":null}"#;
 
     #[test]
     fn a_body_that_fits_binds() {
-        let value = bound(GOOD, &[]).validate(|p, _| Some(p.given_name.clone())).unwrap();
-        assert_eq!(value, "a");
+        let value =
+            bound(GOOD, &[]).validate(|p, _| Some((p.given_name.clone(), p.count, p.nickname.clone()))).unwrap();
+        assert_eq!(value, ("a".to_owned(), -1, None));
+        let named = GOOD.replace(r#""nickname":null"#, r#""nickname":"b""#);
+        assert_eq!(bound(&named, &[]).validate(|p, _| p.nickname.clone()).unwrap(), "b");
+    }
+
+    #[test]
+    fn an_absent_option_member_is_required() {
+        let absent = GOOD.replace(r#","nickname":null"#, "");
+        let got = entries(bound(&absent, &[]).validate(|_, _| Some(())));
+        assert_eq!(got, [("/nickname".into(), "validation.required".into(), None)]);
+    }
+
+    #[test]
+    fn a_nullable_member_takes_null_or_its_type_and_nothing_else() {
+        let wrong = GOOD.replace(r#""nickname":null"#, r#""nickname":5"#);
+        let got = entries(bound(&wrong, &[]).validate(|_, _| Some(())));
+        assert_eq!(got, [("/nickname".into(), "validation.wrong-type".into(), Some("expected string".into()))]);
+        let not_bool = GOOD.replace(r#""active":true"#, r#""active":"yes""#);
+        let got = entries(bound(&not_bool, &[]).validate(|_, _| Some(())));
+        assert_eq!(got, [("/active".into(), "validation.wrong-type".into(), Some("expected boolean".into()))]);
     }
 
     #[test]
     fn every_binding_failure_is_collected_in_one_pass_sorted_by_pointer() {
-        let body = r#"{"zeta":1,"givenName":7,"count":1.5,"ratio":"x","active":true,"slug":"s","a/b":0}"#;
+        let body =
+            r#"{"zeta":1,"givenName":7,"count":1.5,"ratio":"x","active":true,"slug":"s","a/b":0,"nickname":null}"#;
         let got = entries(bound(body, &["slug"]).validate(|_, _| Some(())));
         assert_eq!(
             got,
@@ -328,17 +365,17 @@ mod tests {
 
     #[test]
     fn a_duplicate_member_and_a_malformed_uuid_are_refused() {
-        let dup = r#"{"givenName":"a","givenName":"b","count":1,"ratio":1,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2"}"#;
+        let dup = r#"{"givenName":"a","givenName":"b","count":1,"ratio":1,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","nickname":null}"#;
         let got = entries(bound(dup, &[]).validate(|_, _| Some(())));
         assert_eq!(got, [("/givenName".into(), "validation.duplicate-member".into(), None)]);
-        let bad_id = r#"{"givenName":"a","count":1,"ratio":1,"active":true,"id":"not-a-uuid"}"#;
+        let bad_id = r#"{"givenName":"a","count":1,"ratio":1,"active":true,"id":"not-a-uuid","nickname":null}"#;
         let got = entries(bound(bad_id, &[]).validate(|_, _| Some(())));
         assert_eq!(got, [("/id".into(), "validation.invalid-value".into(), None)]);
     }
 
     #[test]
     fn rule_failures_follow_binding_failures_except_at_a_taken_pointer() {
-        let body = r#"{"givenName":"a","count":1,"ratio":1,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","extra":1}"#;
+        let body = r#"{"givenName":"a","count":1,"ratio":1,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","nickname":null,"extra":1}"#;
         let got = entries(bound(body, &[]).validate(|_, errors| {
             errors.push(FieldError::new("/extra", ApiFieldCode::Required));
             errors.push(FieldError::new("/givenName", ApiFieldCode::Required));

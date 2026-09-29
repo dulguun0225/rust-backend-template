@@ -258,6 +258,8 @@ mod tests {
             LOG.event_with_cause(LogEvent::ProcessPanic, "cause text", &[]);
         });
         let events = capture.events();
+        assert_eq!(capture.text().lines().count(), 3);
+        assert!(capture.text().contains("cause text"));
         assert_eq!(events.len(), 3);
         assert!(events.iter().all(|e| e.get("span").is_none()));
         assert_eq!(events[0]["fields"]["message"], "started");

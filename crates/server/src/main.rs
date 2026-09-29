@@ -2,7 +2,6 @@
 
 mod config;
 
-use std::future::Future as _;
 use std::sync::Arc;
 
 use anyhow::Context as _;
@@ -28,8 +27,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Completes on SIGTERM or Ctrl-C. Written with `poll_fn` rather than `tokio::select!`, whose expansion
-/// uses `%` and so trips `integer_division_remainder_used`, forbidden in this workspace.
+/// Completes on SIGTERM or Ctrl-C.
 async fn shutdown() {
     let ctrl_c = async {
         if tokio::signal::ctrl_c().await.is_err() {
@@ -47,14 +45,43 @@ async fn shutdown() {
     };
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
-    let mut ctrl_c = std::pin::pin!(ctrl_c);
-    let mut terminate = std::pin::pin!(terminate);
+    first_of(ctrl_c, terminate).await;
+}
+
+/// Completes when either future does. Written with `poll_fn` rather than `tokio::select!`, whose expansion
+/// uses `%` and so trips `integer_division_remainder_used`, forbidden in this workspace.
+async fn first_of(a: impl Future<Output = ()>, b: impl Future<Output = ()>) {
+    let mut a = std::pin::pin!(a);
+    let mut b = std::pin::pin!(b);
     std::future::poll_fn(|cx| {
-        if ctrl_c.as_mut().poll(cx).is_ready() || terminate.as_mut().poll(cx).is_ready() {
+        if a.as_mut().poll(cx).is_ready() || b.as_mut().poll(cx).is_ready() {
             std::task::Poll::Ready(())
         } else {
             std::task::Poll::Pending
         }
     })
     .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use std::future::{pending, ready};
+    use std::task::{Context, Poll, Waker};
+
+    fn polled_once(f: impl Future<Output = ()>) -> Poll<()> {
+        let mut f = std::pin::pin!(f);
+        f.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+    }
+
+    #[tokio::test]
+    async fn shutdown_waits_for_a_signal() {
+        assert!(polled_once(super::shutdown()).is_pending());
+    }
+
+    #[test]
+    fn either_future_completing_completes_the_pair() {
+        assert!(polled_once(super::first_of(ready(()), pending())).is_ready());
+        assert!(polled_once(super::first_of(pending(), ready(()))).is_ready());
+        assert!(polled_once(super::first_of(pending::<()>(), pending())).is_pending());
+    }
 }

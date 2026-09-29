@@ -22,7 +22,8 @@ export function appliedFindings(root, base) {
       findings.push(`deleted ${f}: applied on the base branch and gone here`);
       continue;
     }
-    const before = captureAll('git', ['show', `${base}:${f}`], { cwd: root }).stdout;
+    // `./`: relative to this directory, which is backend/ when vendored, not to the repository root.
+    const before = captureAll('git', ['show', `${base}:./${f}`], { cwd: root }).stdout;
     if (before !== fs.readFileSync(full, 'utf8')) findings.push(`edited ${f}: differs from the base branch; a change is a new migration`);
   }
   const latest = listed.map((f) => path.basename(f)).sort().at(-1);

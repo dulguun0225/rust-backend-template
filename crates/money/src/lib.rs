@@ -115,14 +115,20 @@ pub fn mul_div_round(amount: i128, numerator: i128, denominator: i128, mode: Rou
         return None;
     }
     let product = amount.checked_mul(numerator)?;
-    let (p, d) =
-        if denominator < 0 { (product.checked_neg()?, denominator.checked_neg()?) } else { (product, denominator) };
+    // Normalised to a positive denominator. Written with is_negative and is_positive rather than comparisons with
+    // zero: the zero cases are already gone here, so `<` and `<=` would be the same test, and a mutation
+    // between them could never be caught.
+    let (p, d) = if denominator.is_negative() {
+        (product.checked_neg()?, denominator.checked_neg()?)
+    } else {
+        (product, denominator)
+    };
     let quotient = p.checked_div(d)?;
     let remainder = p.checked_rem(d)?;
     if remainder == 0 {
         return Some(quotient);
     }
-    let positive = p > 0;
+    let positive = p.is_positive();
     let away = if positive { quotient.checked_add(1)? } else { quotient.checked_sub(1)? };
     let twice = remainder.checked_abs()?.checked_mul(2)?;
     let rounded = match mode {
@@ -359,6 +365,13 @@ mod tests {
         assert_eq!(Money::parse("-92233720368547758.08", usd()).map(|m| m.minor()), Ok(i64::MIN));
         assert_eq!(Money::parse("12.3", usd()).map(|m| m.minor()), Ok(1230));
         assert_eq!(Money::parse("-0.01", usd()).map(|m| m.minor()), Ok(-1));
+    }
+
+    #[test]
+    fn sign_and_zero_are_read_from_the_minor_units() {
+        let (neg, zero, pos) = (Money::from_minor(-1, usd()), Money::zero(usd()), Money::from_minor(1, usd()));
+        assert_eq!((neg.is_negative(), zero.is_negative(), pos.is_negative()), (true, false, false));
+        assert_eq!((neg.is_zero(), zero.is_zero(), pos.is_zero()), (false, true, false));
     }
 
     #[test]

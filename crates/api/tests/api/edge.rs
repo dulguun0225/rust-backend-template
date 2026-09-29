@@ -48,6 +48,9 @@ async fn body_refusals_before_the_handler_are_coded(pool: PgPool) {
         .body(Body::from(big.clone()))
         .unwrap();
     assert_problem(&send(&app.router, declared).await, 413, "request.too-large");
+    // An extractor with its own, larger default limit (axum's String takes 2 MB) is held to BODY_LIMIT too.
+    let raw = json_request(Method::POST, "/test/lenient", &big);
+    assert_problem(&send(&app.router, raw).await, 413, "request.too-large");
     let text = Request::builder()
         .method(Method::POST)
         .uri("/api/greetings")

@@ -38,13 +38,13 @@ main(() => {
   if (oasdiff(DOCUMENT, 'scripts/fixtures/openapi/compatible.json').status !== 0) throw new Fail('oasdiff refused scripts/fixtures/openapi/compatible.json');
   console.log('oasdiff refused its breaking fixture and passed its compatible one');
   const base = process.argv[2] ?? '';
-  if (!base || /^0+$/.test(base) || !ok('git', ['cat-file', '-e', `${base}:${DOCUMENT}`], { cwd: repo })) {
+  if (!base || /^0+$/.test(base) || !ok('git', ['cat-file', '-e', `${base}:./${DOCUMENT}`], { cwd: repo })) {
     console.log(`no base document to compare against (base ${base || 'not given'})`);
     return;
   }
   const baseFile = path.join(repo, 'target', 'openapi', 'base.json');
   fs.mkdirSync(path.dirname(baseFile), { recursive: true });
-  fs.writeFileSync(baseFile, captureAll('git', ['show', `${base}:${DOCUMENT}`], { cwd: repo }).stdout);
+  fs.writeFileSync(baseFile, captureAll('git', ['show', `${base}:./${DOCUMENT}`], { cwd: repo }).stdout);
   const diff = oasdiff(baseFile, DOCUMENT);
   process.stdout.write(diff.stdout);
   if (diff.status !== 0) throw new Fail(`oasdiff: ${DOCUMENT} breaks the document on ${base.slice(0, 12)} (exit ${diff.status})`, diff.status);

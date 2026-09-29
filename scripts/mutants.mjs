@@ -70,7 +70,8 @@ main(() => {
   canary();
   const base = process.argv[2] ?? '';
   const known = base && !/^0+$/.test(base) && ok('git', ['cat-file', '-e', `${base}^{commit}`], { cwd: repo });
-  const diff = known ? capture('git', ['diff', `${base}...HEAD`], { cwd: repo }) : capture('git', ['diff', 'HEAD'], { cwd: repo });
+  // --relative: vendored as backend/, paths are relative to this directory, as cargo-mutants reads them.
+  const diff = known ? capture('git', ['diff', '--relative', `${base}...HEAD`], { cwd: repo }) : capture('git', ['diff', '--relative', 'HEAD'], { cwd: repo });
   const diffFile = path.join(repo, 'target', 'mutants.diff');
   fs.mkdirSync(path.dirname(diffFile), { recursive: true });
   fs.writeFileSync(diffFile, diff ? `${diff}\n` : '');
