@@ -1,3 +1,13 @@
+# mise.lock records every tool below at its exact version, with the download url and a sha256 for each platform in
+# `lockfile_platforms`. `mise install` refuses a download whose checksum differs and, under `tool_config.locked`,
+# a tool the lock lacks. backend/scripts/check-mise-lock.mjs fails the backend wall when the lock is out of date
+# with this file or an entry lacks a checksum. After moving a pin here, run `mise lock` and commit both files.
+[settings]
+lockfile_platforms = ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64", "windows-x64"]
+
+[tool_config]
+locked = true
+
 [tools]
 # The project root's scripts (scripts/*.mjs) and the frontend job run on this. The backend's own tools are
 # pinned in backend/mise.toml; `cd backend && mise install` installs them, and the backend CI job runs mise there.

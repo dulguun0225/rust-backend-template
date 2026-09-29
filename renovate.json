@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:best-practices", ":semanticCommitsDisabled"],
-  "description": "Every version here is an exact pin: `=` requirements in Cargo.toml with Cargo.lock committed, exact tools in mise.toml, digests on images and actions. This is the named path for moving a pin: a PR per update, no automerge. Renovate itself is AGPL-3.0; as a hosted app it never enters the dependency graph cargo-deny reads.",
+  "description": "Every version here is an exact pin: `=` requirements in Cargo.toml with Cargo.lock committed, exact tools in mise.toml with each artifact's sha256 in mise.lock, which the mise manager refreshes with `mise lock` when it moves a pin, digests on images and actions. This is the named path for moving a pin: a PR per update, no automerge. Renovate itself is AGPL-3.0; as a hosted app it never enters the dependency graph cargo-deny reads.",
   "pinDigests": true,
   "rangeStrategy": "pin",
   "minimumReleaseAge": "14 days",

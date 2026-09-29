@@ -64,8 +64,10 @@ repository whose trunk has another name changes the name between the backticks.
 This template works on `main`; the services made from it work on `dev`, and `scripts/init.mjs` sets that in
 the project `CLAUDE.md` it lifts and, in a standalone service, in this line.
 
-- `node scripts/wall.mjs` is exactly what CI runs. Docker required; `mise install` gives the pinned tools and
-  rustup the pinned toolchain. Scripts are Node, standard library only.
+- `node scripts/wall.mjs` is exactly what CI runs. Docker required; `mise install` gives the pinned tools, each
+  at the sha256 `mise.lock` records, and rustup the pinned toolchain. Scripts are Node, standard library only.
+  A tool pin moves in `mise.toml`, then `mise lock`, then `node scripts/check-suppressions.mjs --write`, all
+  committed together; the wall refuses a lock out of date with `mise.toml` or missing a checksum.
   After squawk the wall runs the project checks: the Node scripts listed one per line, as paths relative to the
   project root, in `scripts/wall-checks.txt` there (the project root is the directory above this one when it is
   `backend/` inside a project, otherwise this directory); blank lines and `#` lines are skipped, a listed path

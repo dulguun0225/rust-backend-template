@@ -44,7 +44,7 @@ variables:
     - cd backend && mise trust && mise install && cd ..
   cache:
     key:
-      files: [backend/Cargo.lock, backend/mise.toml]
+      files: [backend/Cargo.lock, backend/mise.lock] # mise.lock moves with every pin in mise.toml, and with a checksum alone
     paths: [.mise, .cargo/registry, .cargo/git, backend/target]
 
 backend:

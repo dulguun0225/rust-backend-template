@@ -1,0 +1,11 @@
+[settings]
+lockfile_platforms = ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64", "windows-x64"]
+
+[tool_config]
+locked = true
+
+[tools]
+node = "24.22.0"
+"github:example/tool" = "1.2.3"
+"cargo:example" = { version = "0.1.0", default-features = false, features = "a,b" }
+example-jdk = "1.0.0"

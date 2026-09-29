@@ -43,8 +43,12 @@ later gate changes in; expect to resolve the name when it does.
 template's own `.github/workflows/ci.yml` is the service's CI.
 
 Toolchain: rustup reads `rust-toolchain.toml`; `mise install` reads `mise.toml` (Node, squawk, ast-grep,
-gitleaks, trivy, cargo-deny, cargo-shear, cargo-llvm-cov, cargo-mutants, oasdiff, vacuum, sqlx-cli). Docker is
-needed for the wall: it runs the PostgreSQL server and builds the image trivy scans.
+gitleaks, trivy, cargo-deny, cargo-shear, cargo-llvm-cov, cargo-mutants, oasdiff, vacuum, sqlx-cli) and installs
+each at the sha256 `mise.lock` records for the platform, refusing a download that differs and a tool the lock
+lacks. To move a tool pin: edit `mise.toml`, run `mise lock` (it refreshes all five platforms), then
+`node scripts/check-suppressions.mjs --write`, and commit the three files. A Renovate PR that moves a mise pin
+carries the first two, since Renovate's mise manager runs `mise lock` after its edit; push the third to it.
+Docker is needed for the wall: it runs the PostgreSQL server and builds the image trivy scans.
 
 ## What is in the box
 
@@ -58,6 +62,7 @@ needed for the wall: it runs the PostgreSQL server and builds the image trivy sc
 | `crates/server` | The binary: configuration, logging, pool, migrations, listener |
 | `migrations/`, `.sqlx/` | sqlx migrations; the committed query metadata builds read offline |
 | `openapi/v1.json`, `snapshots/error-catalog.txt` | The committed contract and error catalog the tests diff |
+| `mise.toml`, `mise.lock` | The tools the wall runs: exact versions, and a url and sha256 per platform, which `scripts/check-mise-lock.mjs` holds to `mise.toml` |
 | `clippy.toml`, `clippy-scopes.toml`, `deny.toml`, `layering.toml`, `table-owners.toml`, `.squawk.toml`, `sgconfig.yml`, `.trivyignore`, `rules/` | Gate configuration, each file hashed in `suppressions.txt` with the scripts, fixtures and canaries |
 | `canaries/bans` | One marked violation per ban and per denied or forbidden lint |
 | `scripts/wall.mjs` | The whole wall as one command; the template's CI and a project's `backend` job both run it |
@@ -84,9 +89,13 @@ tokio 1.53.1, axum 0.8.9, tower 0.5.3, tower-http 0.7.1, http-body-util 0.1.5, u
 0.9.0 depends on 0.22 and a second version is a duplicate `deny.toml` refuses. Tools: Node 24.21.0 (the newest
 LTS line; 26.10.0 is current, not LTS), squawk 2.66.0, ast-grep 0.45.3, gitleaks 8.30.1, cargo-deny 0.20.2, cargo-shear 1.14.0,
 cargo-llvm-cov 0.9.1, cargo-mutants 27.1.0, oasdiff 1.32.1, vacuum 0.30.6, sqlx-cli 0.9.0, mise 2026.9.16
-(GitHub releases); trivy 0.74.0 (2026-08-14), an immutable GitHub release outside Aqua's 2026-03 supply-chain
-advisory (GHSA-69fq-xp46-6x23: binaries v0.69.4 only), its archive checked by mise against the release
-checksums and their sigstore bundle, signed by trivy's release workflow at the tag. PostgreSQL 18.6 (`postgres:18.6-alpine`, 2026-09-21, pinned by digest), the major
+(GitHub releases). Each of those tools but sqlx-cli, which is built from source, is pinned by sha256 in
+`mise.lock` for Linux x64 and arm64, macOS x64 and arm64, and Windows x64, except cargo-mutants on arm64, which
+has no release build. The lock was written 2026-09-29 in format 2, which mise 2026.9.7, 2026.9.15 and 2026.9.16
+each read (run); a new lock from 2026.9.16 is format 3, which 2026.9.15 rejects, and `mise lock` keeps an
+existing lock's format. trivy 0.74.0 (2026-08-14) is an immutable GitHub release outside Aqua's 2026-03
+supply-chain advisory (GHSA-69fq-xp46-6x23: binaries v0.69.4 only); `mise lock` checked its archives against the
+release checksums and their sigstore bundle, signed by trivy's release workflow at the tag, before recording them. PostgreSQL 18.6 (`postgres:18.6-alpine`, 2026-09-21, pinned by digest), the major
 java-backend-template uses. Images `rust:1.98.1-slim-trixie` and `gcr.io/distroless/cc-debian13:nonroot`,
 by digest. Actions `actions/checkout` v7.0.1, `jdx/mise-action` v5.0.0, `actions/cache` v6.1.0,
 `actions/upload-artifact` v7.0.1, by SHA. Where these differ from the record (cargo-deny's release, which the

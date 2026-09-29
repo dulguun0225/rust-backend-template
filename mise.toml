@@ -1,3 +1,14 @@
+# mise.lock records every tool below at its exact version, with the download url and a sha256 for each platform in
+# `lockfile_platforms`. `mise install` refuses a download whose checksum differs and, under `tool_config.locked`,
+# a tool the lock lacks. scripts/check-mise-lock.mjs fails the wall when the lock is out of date with this file or
+# an entry lacks a checksum. After moving a pin here, run `mise lock`, then
+# `node scripts/check-suppressions.mjs --write`, and commit the three files.
+[settings]
+lockfile_platforms = ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64", "windows-x64"]
+
+[tool_config]
+locked = true
+
 [tools]
 # Exact pins, each checked newest on 2026-09-29. The Rust toolchain itself is rust-toolchain.toml's, read by
 # rustup; this file pins what runs beside it. `mise install` installs every entry.

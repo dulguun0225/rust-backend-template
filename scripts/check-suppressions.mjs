@@ -11,7 +11,9 @@
 // A regenerated inventory that differs from the committed one fails, printing the difference; `--write`
 // rewrites it. It makes an edit visible in the change that makes it; it refuses none, since the same change can
 // rewrite it. Files Renovate moves (mise.toml, the Dockerfile, the workflows, [workspace.dependencies]) are not
-// hashed, so a pin update does not fail here; a digest inside a script is masked for the same reason. Suppressing a lint the workspace denies or forbids is refused outright by
+// hashed, so a pin update does not fail here; a digest inside a script is masked for the same reason. mise.lock
+// is the exception: it holds the checksum each tool is installed against, so an edit to it, a Renovate pin move
+// included, is listed and regenerated in the same change. Suppressing a lint the workspace denies or forbids is refused outright by
 // check-lint-config.mjs; this inventory lists the rest, so each one is a visible, reviewable line.
 // Usage: node scripts/check-suppressions.mjs [--write] [--selftest]
 import crypto from 'node:crypto';
@@ -25,6 +27,7 @@ import { tableText } from './_toml.mjs';
 
 const CONFIG_FILES = [
   '.cargo/config.toml',
+  'mise.lock',
   '.squawk.toml',
   '.trivyignore',
   'clippy.toml',
@@ -138,6 +141,11 @@ function selftest() {
     fs.writeFileSync(path.join(dir, 'clippy.toml'), 'disallowed-methods = []\nallow-unwrap-in-tests = true\n');
     if (!inventoryDiff(dir).some((l) => l.startsWith('+ config clippy.toml'))) problems.push('an edited clippy.toml was not reported');
     write(dir);
+    fs.writeFileSync(path.join(dir, 'mise.lock'), `[tools.node."platforms.linux-x64"]\nchecksum = "sha256:${'0'.repeat(64)}"\n`);
+    write(dir);
+    fs.writeFileSync(path.join(dir, 'mise.lock'), `[tools.node."platforms.linux-x64"]\nchecksum = "sha256:${'1'.repeat(64)}"\n`);
+    if (!inventoryDiff(dir).some((l) => l.startsWith('+ config mise.lock'))) problems.push('an edited mise.lock checksum was not reported');
+    write(dir);
     fs.writeFileSync(path.join(dir, 'Cargo.toml'), '[workspace.lints.clippy]\nunwrap_used = "allow"\n');
     if (!inventoryDiff(dir).some((l) => l.startsWith('+ config Cargo.toml [workspace.lints.clippy]'))) problems.push('an edited lint table was not reported');
     write(dir);
@@ -156,7 +164,7 @@ function selftest() {
     fs.rmSync(dir, { recursive: true, force: true });
   }
   report(problems, 'suppression selftest case(s) failed');
-  console.log('suppression selftest: a new expect, ignore, rustfmt::skip and .trivyignore entry, an edited clippy.toml, lint table, profile table, script and fixture tree are each reported; a moved digest is not');
+  console.log('suppression selftest: a new expect, ignore, rustfmt::skip and .trivyignore entry, an edited clippy.toml, mise.lock checksum, lint table, profile table, script and fixture tree are each reported; a moved digest is not');
 }
 
 main(() => {

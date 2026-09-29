@@ -1,7 +1,7 @@
 // The backend wall, as one command: the definition of done. The template's own CI and a project's `backend`
 // job both run exactly this, so the two cannot drift on what "green" means. Needs Docker (a throwaway
 // PostgreSQL server, and the service image the scan reads), the toolchain rust-toolchain.toml pins (rustup), the
-// tools mise.toml pins (`mise install`), and network for crates the first build downloads and for trivy's
+// tools mise.toml pins at the checksums mise.lock records (`mise install`), and network for crates the first build downloads and for trivy's
 // vulnerability database.
 // Usage: node scripts/wall.mjs [base-sha]
 //   The base scopes squawk, the applied-migration check, the OpenAPI breaking-change diff, mutation testing and
@@ -25,6 +25,10 @@ main(() => {
   process.chdir(root);
   const base = process.argv[2] ?? '';
   const started = Date.now();
+
+  step('mise.lock: every tool mise.toml pins, at that version, with a checksum for each platform');
+  script('check-mise-lock.mjs', '--selftest');
+  script('check-mise-lock.mjs');
 
   step('Toolchain: rust-toolchain.toml, and the tools mise.toml pins');
   toolchain();
