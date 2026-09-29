@@ -13,18 +13,48 @@
 //   money-column-type     `<x>_amount` is numeric(19,4) or numeric(20,4), not null
 //   money-nan-check       `<x>_amount` carries check (<x>_amount <> 'NaN')
 //   money-currency-sibling `<x>_amount` has a not-null `<x>_currency` beside it
+//                         The three money rules read every column a `create table` declares and every column an
+//                         `alter table … add` adds, quoted or not; for an added column the NaN check and the
+//                         currency column may sit in any migration.
 //   squawk-ignore         any `squawk-ignore` comment: a rule is turned off in .squawk.toml, for every file
 //   file-name             migrations/<NNNN>_<name>.sql, four digits, lowercase name
 // Usage: node scripts/check-migrations.mjs [--selftest]
-//   --selftest: every scripts/fixtures/migrations/bad_<rule>.sql must trip <rule>; good_*.sql must trip nothing.
+//   --selftest: every scripts/fixtures/migrations/bad_<rule>[--<variant>].sql must trip <rule>; good_*.sql must
+//   trip nothing.
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { main, readText, report, walk, Fail } from './_lib.mjs';
 
-export function lint(sql) {
+/** The comma-separated items of a parenthesised list, split at depth zero. */
+function items(text) {
+  const out = [];
+  let depth = 0;
+  let current = '';
+  for (const c of text) {
+    if (c === '(') depth += 1;
+    if (c === ')') depth -= 1;
+    if (c === ',' && depth === 0) {
+      out.push(current.trim());
+      current = '';
+    } else current += c;
+  }
+  if (current.trim()) out.push(current.trim());
+  return out;
+}
+
+function moneyColumn(prefix, definition, context, out) {
+  if (!/^numeric\((19|20),\s*4\)\s+not\s+null/.test(definition)) out.add('money-column-type');
+  if (!new RegExp(`check\\s*\\(\\s*${prefix}_amount\\s*<>\\s*'nan'`).test(context)) out.add('money-nan-check');
+  if (!new RegExp(`\\b${prefix}_currency\\s+(char\\(3\\)|text|varchar\\(3\\))\\s+not\\s+null`).test(context)) out.add('money-currency-sibling');
+}
+
+/** `all` is every migration's text, which an added money column's NaN check and currency column may sit in. */
+export function lint(sql, all = sql) {
   const out = new Set();
-  const lower = sql.replace(/--[^\n]*/g, '').toLowerCase();
+  const unquote = (text) => text.replace(/--[^\n]*/g, '').toLowerCase().replace(/"([^"]*)"/g, '$1');
+  const lower = unquote(sql);
+  const everything = unquote(all);
   const has = (re) => re.test(lower);
   if (/squawk-ignore/i.test(sql)) out.add('squawk-ignore');
   if (has(/\b(big)?serial\b|generated\s+(always|by\s+default)\s+as\s+identity|create\s+sequence\b/)) out.add('sequence');
@@ -39,11 +69,15 @@ export function lint(sql) {
   for (const m of lower.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?[\w."]+\s*\(([\s\S]*?)\);/g)) {
     const body = m[1];
     if (!composite && !/\bid\s+uuid\s+primary\s+key\s+default\s+uuidv7\(\)/.test(body)) out.add('uuidv7-primary-key');
-    for (const a of body.matchAll(/^\s*(\w+)_amount\s+(.+)$/gm)) {
-      const [, prefix, definition] = a;
-      if (!/^numeric\((19|20),\s*4\)\s+not\s+null/.test(definition)) out.add('money-column-type');
-      if (!new RegExp(`check\\s*\\(\\s*${prefix}_amount\\s*<>\\s*'nan'`).test(body)) out.add('money-nan-check');
-      if (!new RegExp(`\\b${prefix}_currency\\s+(char\\(3\\)|text|varchar\\(3\\))\\s+not\\s+null`).test(body)) out.add('money-currency-sibling');
+    for (const column of items(body)) {
+      const a = /^(\w+)_amount\s+([\s\S]+)$/.exec(column);
+      if (a) moneyColumn(a[1], a[2], body, out);
+    }
+  }
+  for (const m of lower.matchAll(/alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?[\w.]+\s+([\s\S]*?);/g)) {
+    for (const action of items(m[1])) {
+      const a = /^add\s+(?:column\s+)?(?:if\s+not\s+exists\s+)?(\w+)_amount\s+([\s\S]+)$/.exec(action);
+      if (a) moneyColumn(a[1], a[2], everything, out);
     }
   }
   return out;
@@ -58,7 +92,7 @@ function selftest(repo) {
     if (f.startsWith('good_')) {
       if (rules.size > 0) problems.push(`${f}: expected nothing, got ${[...rules].join(', ')}`);
     } else {
-      const rule = f.slice('bad_'.length, -'.sql'.length);
+      const rule = f.slice('bad_'.length, -'.sql'.length).split('--')[0];
       if (!rules.has(rule)) problems.push(`${f}: ${rule} did not fire (got ${[...rules].join(', ') || 'nothing'})`);
     }
   }
@@ -83,7 +117,9 @@ main(() => {
   const files = walk(path.join(repo, 'migrations'));
   if (files.length === 0) throw new Fail('no migrations found under migrations/');
   const findings = fileNameFindings(files);
-  for (const f of files.filter((n) => n.endsWith('.sql'))) for (const rule of lint(readText(path.join(repo, 'migrations', f)))) findings.push(`${rule} migrations/${f}`);
+  const sqlFiles = files.filter((n) => n.endsWith('.sql'));
+  const all = sqlFiles.map((f) => readText(path.join(repo, 'migrations', f))).join('\n');
+  for (const f of sqlFiles) for (const rule of lint(readText(path.join(repo, 'migrations', f)), all)) findings.push(`${rule} migrations/${f}`);
   report(findings, 'migration convention finding(s)');
   console.log(`migrations: ${files.length} file(s) follow the conventions`);
 });

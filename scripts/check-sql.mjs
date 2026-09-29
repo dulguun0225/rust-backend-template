@@ -9,11 +9,17 @@
 //   order-by-id                  an ORDER BY whose first key is the `id` column: a time-ordered key is not an
 //                                ordering; it is only the final tiebreak
 //   offset                       OFFSET: pages are keyset only
-//   clock-in-sql                 now(), current_timestamp and their kin: time comes from the injected clock
+//   clock-in-sql                 now(), current_timestamp and their kin, and the 'now', 'today', 'tomorrow' and
+//                                'yesterday' inputs: time comes from the injected clock
+//   id-in-sql                    gen_random_uuid(), uuidv4(), uuidv7(), uuid_generate_*(), random(),
+//                                gen_random_bytes(): ids come from platform::ids::new_id
+//   write-outside-feature        a write in crates/store outside a feature module (lib.rs): no owner to hold it to
 //   sqlx-inventory               (--inventory) the query literals found here differ from the committed .sqlx
 //                                metadata, so this script's reach and sqlx's disagree
 // A feature is the module a file belongs to: crates/store/src/<feature>.rs or crates/store/src/<feature>/…,
 // and crates/store/tests/<feature>.rs for its tests. Any feature may read any table.
+// Identifiers are read as PostgreSQL reads them: a quoted name ("greeting") is the name, and a schema
+// qualifier (public.greeting) is dropped, so neither spelling moves a statement out of a rule's reach.
 // What it does not see: SQL outside those macros (the unchecked functions and query_file! are banned by
 // clippy.toml), a table reached through a view or a function (migrations may create neither), and a table
 // named in a string built at run time (runtime SQL is banned).
@@ -46,15 +52,24 @@ export function queries(root) {
   return out;
 }
 
+// PostgreSQL's special date/time inputs that read the clock when cast: 'now'::timestamptz.
+const CLOCK_INPUT = /^\s*(now|today|tomorrow|yesterday)\s*$/i;
+const literal = (body) => (CLOCK_INPUT.test(body) ? `'${body.trim().toLowerCase()}'` : "''");
+
 function normalize(sql) {
   return sql
     .replace(/--[^\n]*/g, ' ')
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/'(?:[^']|'')*'/g, "''")
+    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)?\$([\s\S]*?)\$\1\$/g, (_, _tag, body) => literal(body))
+    .replace(/'((?:[^']|'')*)'/g, (_, body) => literal(body))
+    .replace(/"((?:[^"]|"")*)"/g, (_, name) => name.replace(/""/g, '"'))
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+// An optional schema qualifier before a table name.
+const Q = '(?:[a-z_][a-z0-9_]*\\.)?';
 
 /** Tables the migrations create, and which of them carry a `version` column. */
 function schema(root) {
@@ -62,11 +77,11 @@ function schema(root) {
   const versioned = new Set();
   for (const file of walk(path.join(root, 'migrations'), (f) => f.endsWith('.sql'))) {
     const sql = normalize(readText(path.join(root, 'migrations', file)));
-    for (const m of sql.matchAll(/create table (?:if not exists )?([a-z_][a-z0-9_]*) \((.*?)\);/g)) {
+    for (const m of sql.matchAll(new RegExp(`create table (?:if not exists )?${Q}([a-z_][a-z0-9_]*) \\((.*?)\\);`, 'g'))) {
       tables.add(m[1]);
       if (/(^|, ?|\( ?)version /.test(m[2])) versioned.add(m[1]);
     }
-    for (const m of sql.matchAll(/alter table (?:only )?([a-z_][a-z0-9_]*) add (?:column )?(?:if not exists )?version /g)) versioned.add(m[1]);
+    for (const m of sql.matchAll(new RegExp(`alter table (?:if exists )?(?:only )?${Q}([a-z_][a-z0-9_]*) add (?:column )?(?:if not exists )?version `, 'g'))) versioned.add(m[1]);
   }
   return { tables, versioned };
 }
@@ -79,11 +94,11 @@ function featureOf(file) {
 function writeTargets(sql) {
   const targets = [];
   const patterns = [
-    /(?<!for (?:no key )?)\bupdate (?:only )?([a-z_][a-z0-9_]*)\b(?! (?:of|nowait|skip)\b)/g,
-    /\binsert into ([a-z_][a-z0-9_]*)/g,
-    /\bdelete from (?:only )?([a-z_][a-z0-9_]*)/g,
-    /\bmerge into ([a-z_][a-z0-9_]*)/g,
-    /\btruncate (?:table )?(?:only )?([a-z_][a-z0-9_]*)/g,
+    new RegExp(`(?<!for (?:no key )?)\\bupdate (?:only )?${Q}([a-z_][a-z0-9_]*)\\b(?! (?:of|nowait|skip)\\b)`, 'g'),
+    new RegExp(`\\binsert into ${Q}([a-z_][a-z0-9_]*)`, 'g'),
+    new RegExp(`\\bdelete from (?:only )?${Q}([a-z_][a-z0-9_]*)`, 'g'),
+    new RegExp(`\\bmerge into ${Q}([a-z_][a-z0-9_]*)`, 'g'),
+    new RegExp(`\\btruncate (?:table )?(?:only )?${Q}([a-z_][a-z0-9_]*)`, 'g'),
   ];
   for (const re of patterns) for (const m of sql.matchAll(re)) targets.push(m[1]);
   return targets;
@@ -104,19 +119,21 @@ export function sqlFindings(root, { inventory = false } = {}) {
     const feature = featureOf(q.file);
     const targets = writeTargets(sql);
     if (targets.length > 0 && !q.file.startsWith('crates/store/')) findings.push(`write-outside-store ${at}: ${targets.join(', ')}`);
+    if (targets.length > 0 && q.file.startsWith('crates/store/') && !feature) findings.push(`write-outside-feature ${at}: ${targets.join(', ')} written outside a feature module`);
     for (const t of targets) {
       if (feature && owners[t] && owners[t] !== feature) findings.push(`foreign-write ${at}: ${feature} writes ${t}, owned by ${owners[t]}`);
-      if (versioned.has(t) && /\bupdate (?:only )?/.test(sql) && new RegExp(`\\bupdate (?:only )?${t}\\b`).test(sql)) {
-        const guarded = new RegExp(`^update (?:only )?${t} set (.+) where (id = \\$\\d+ and version = \\$\\d+|version = \\$\\d+ and id = \\$\\d+)( returning .+)?$`).exec(sql);
+      if (versioned.has(t) && /\bupdate (?:only )?/.test(sql) && new RegExp(`\\bupdate (?:only )?${Q}${t}\\b`).test(sql)) {
+        const guarded = new RegExp(`^update (?:only )?${Q}${t} set (.+) where (id = \\$\\d+ and version = \\$\\d+|version = \\$\\d+ and id = \\$\\d+)( returning .+)?$`).exec(sql);
         if (!guarded || !/(^|, )version = version \+ 1(,|$)/.test(guarded[1])) findings.push(`versioned-update ${at}: ${sql}`);
       }
     }
     if (targets.length > 0 && q.fn) writingFns.set(`${q.file}#${q.fn}`, feature);
-    if (/\border by (?:[a-z_][a-z0-9_]*\.)?id\b/.test(sql)) findings.push(`order-by-id ${at}: ${sql}`);
+    if (/\border by (?:[a-z_][a-z0-9_]*\.)*id\b/.test(sql)) findings.push(`order-by-id ${at}: ${sql}`);
     if (/\boffset\b/.test(sql)) findings.push(`offset ${at}: ${sql}`);
-    if (/\b(now ?\(|current_timestamp\b|current_date\b|current_time\b|localtimestamp\b|localtime\b|clock_timestamp ?\(|statement_timestamp ?\(|transaction_timestamp ?\(|timeofday ?\()/.test(sql)) {
+    if (/\b(now ?\(|current_timestamp\b|current_date\b|current_time\b|localtimestamp\b|localtime\b|clock_timestamp ?\(|statement_timestamp ?\(|transaction_timestamp ?\(|timeofday ?\()|'(now|today|tomorrow|yesterday)'/.test(sql)) {
       findings.push(`clock-in-sql ${at}: ${sql}`);
     }
+    if (/\b(gen_random_uuid|uuidv4|uuidv7|uuid_generate_v\d\w*|random|gen_random_bytes) ?\(/.test(sql)) findings.push(`id-in-sql ${at}: ${sql}`);
   }
   for (const q of all) {
     const key = `${q.file}#${q.fn}`;
@@ -147,14 +164,15 @@ function selftest(repo) {
   const cases = fs.readdirSync(dir).sort();
   const problems = [];
   for (const name of cases) {
-    const findings = sqlFindings(path.join(dir, name), { inventory: name === 'sqlx-inventory' });
+    const rule = name.split('--')[0];
+    const findings = sqlFindings(path.join(dir, name), { inventory: rule === 'sqlx-inventory' });
     const rules = new Set(findings.map((f) => f.split(' ')[0]));
-    if (name === 'good' ? rules.size !== 0 : rules.size !== 1 || !rules.has(name)) {
-      problems.push(`fixture ${name}: expected ${name === 'good' ? 'no finding' : `only ${name}`}, got:\n  ${findings.join('\n  ') || '(none)'}`);
+    if (name === 'good' ? rules.size !== 0 : rules.size !== 1 || !rules.has(rule)) {
+      problems.push(`fixture ${name}: expected ${name === 'good' ? 'no finding' : `only ${rule}`}, got:\n  ${findings.join('\n  ') || '(none)'}`);
     }
   }
-  const expected = ['clock-in-sql', 'foreign-table-in-writing-fn', 'foreign-write', 'good', 'offset', 'order-by-id', 'sqlx-inventory', 'unowned-table', 'versioned-update', 'write-outside-store'];
-  for (const e of expected) if (!cases.includes(e)) problems.push(`fixture ${e} is missing`);
+  const expected = ['clock-in-sql', 'foreign-table-in-writing-fn', 'foreign-write', 'good', 'id-in-sql', 'offset', 'order-by-id', 'sqlx-inventory', 'unowned-table', 'versioned-update', 'write-outside-feature', 'write-outside-store'];
+  for (const e of expected) if (!cases.some((c) => c.split('--')[0] === e)) problems.push(`fixture ${e} is missing`);
   report(problems, 'SQL fixture(s) not refused as expected');
   console.log(`sql selftest: ${cases.length} fixtures, each refused by its rule alone (good: none)`);
 }
