@@ -1,0 +1,4 @@
+disallowed-methods = [
+  { path = "std::thread::sleep", reason = "blocking" },
+]
+arithmetic-side-effects-allowed = ["i128"]

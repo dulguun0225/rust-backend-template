@@ -1,0 +1,6 @@
+env:
+  CARGO_BUILD_RUSTFLAGS: -Coverflow-checks=off
+jobs:
+  wall:
+    steps:
+      - run: cargo clippy --workspace

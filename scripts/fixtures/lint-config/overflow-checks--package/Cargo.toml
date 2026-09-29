@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = ["crates/member"]
+
+[workspace.lints.clippy]
+unwrap_used = "forbid"
+disallowed_methods = "deny"
+
+[profile.release]
+overflow-checks = true
+
+[profile.release.package.member]
+overflow-checks = false

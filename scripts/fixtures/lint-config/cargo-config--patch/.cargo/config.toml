@@ -1,0 +1,2 @@
+[patch.crates-io]
+itoa = { path = "crates/member" }

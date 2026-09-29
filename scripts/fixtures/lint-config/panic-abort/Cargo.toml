@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["member"]
+members = ["crates/member"]
 
 [workspace.lints.clippy]
 unwrap_used = "forbid"
