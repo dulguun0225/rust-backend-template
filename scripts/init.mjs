@@ -78,9 +78,15 @@ main(() => {
   }
   if (!fs.existsSync('project-root')) throw new Fail('project-root/ is gone: this template has already been initialised in vendored mode', 2);
 
-  // Read every file before writing any, so a missing target stops the run with nothing changed.
+  // Read every file before writing any, so a missing target stops the run with nothing changed. A standalone
+  // service also moves its base branch from main to dev in the root CLAUDE.md and the CI trigger.
+  const branch = [
+    ['CLAUDE.md', /^Base branch: `main`$/gm, 'Base branch: `dev`'],
+    ['.github/workflows/ci.yml', /^ {4}branches: \[main\]$/gm, '    branches: [dev, main]'],
+  ];
   const edits = new Map();
-  for (const [file, re, to] of renames(name)) {
+  for (const [file, re, to] of [...renames(name), ...(mode === 'standalone' ? branch : [])]) {
+    if (!fs.existsSync(file)) throw new Fail(`${file} is missing: the template changed under this script`);
     const before = edits.get(file) ?? fs.readFileSync(file, 'utf8');
     if (!re.test(before)) throw new Fail(`${file} does not carry ${re}: the template changed under this script`);
     re.lastIndex = 0;
@@ -107,14 +113,6 @@ main(() => {
     console.log(`lifted project-root/ to ${path.dirname(here)}; removed the template's own .github/ and renovate.json from ${path.basename(here)}/`);
     console.log('next, here: cargo fmt --all && node scripts/wall.mjs; then at the project root: git add -A, commit, node scripts/apply-ruleset.mjs');
   } else {
-    for (const [file, from, to] of [
-      ['CLAUDE.md', /^Base branch: `main`$/m, 'Base branch: `dev`'],
-      ['.github/workflows/ci.yml', /^ {4}branches: \[main\]$/m, '    branches: [dev, main]'],
-    ]) {
-      const text = fs.readFileSync(file, 'utf8');
-      if (!from.test(text)) throw new Fail(`${file} does not carry the line to move to dev: ${from}`);
-      fs.writeFileSync(file, text.replace(from, to));
-    }
     console.log('base branch: dev (CLAUDE.md, .github/workflows/ci.yml); create dev and make it the default branch on the forge');
     console.log('next: cargo fmt --all && node scripts/wall.mjs, then commit');
   }
