@@ -43,8 +43,8 @@ later gate changes in; expect to resolve the name when it does.
 template's own `.github/workflows/ci.yml` is the service's CI.
 
 Toolchain: rustup reads `rust-toolchain.toml`; `mise install` reads `mise.toml` (Node, squawk, ast-grep,
-cargo-deny, cargo-shear, cargo-llvm-cov, cargo-mutants, oasdiff, vacuum, sqlx-cli). Docker is needed for the
-wall.
+gitleaks, cargo-deny, cargo-shear, cargo-llvm-cov, cargo-mutants, oasdiff, vacuum, sqlx-cli). Docker is needed
+for the wall.
 
 ## What is in the box
 
@@ -58,7 +58,7 @@ wall.
 | `crates/server` | The binary: configuration, logging, pool, migrations, listener |
 | `migrations/`, `.sqlx/` | sqlx migrations; the committed query metadata builds read offline |
 | `openapi/v1.json`, `snapshots/error-catalog.txt` | The committed contract and error catalog the tests diff |
-| `clippy.toml`, `clippy-scopes.toml`, `deny.toml`, `layering.toml`, `table-owners.toml`, `.squawk.toml`, `sgconfig.yml`, `rules/` | Gate configuration, each file hashed in `suppressions.txt` |
+| `clippy.toml`, `clippy-scopes.toml`, `deny.toml`, `layering.toml`, `table-owners.toml`, `.squawk.toml`, `sgconfig.yml`, `rules/` | Gate configuration, each file hashed in `suppressions.txt` with the scripts, fixtures and canaries |
 | `canaries/bans` | One marked violation per ban and per denied or forbidden lint |
 | `scripts/wall.mjs` | The whole wall as one command; the template's CI and a project's `backend` job both run it |
 | `scripts/` | The wall's parts, each with its selftest or canary; `fixtures/` holds their negative inputs; `init.mjs`; `db.mjs` for a local database and `.sqlx` |
@@ -82,7 +82,7 @@ tokio 1.53.1, axum 0.8.9, tower 0.5.3, tower-http 0.7.1, http-body-util 0.1.5, u
 1.26.1, time 0.3.55, thiserror 2.0.21, anyhow 1.0.104, tracing 0.1.44, tracing-subscriber 0.3.23, proptest
 1.11.0, jsonschema 0.58.2 (crates.io); base64 0.22.1 (2024-04-30), not the newest 0.23.1, because sqlx-core
 0.9.0 depends on 0.22 and a second version is a duplicate `deny.toml` refuses. Tools: Node 24.21.0 (the newest
-LTS line; 26.10.0 is current, not LTS), squawk 2.66.0, ast-grep 0.45.3, cargo-deny 0.20.2, cargo-shear 1.14.0,
+LTS line; 26.10.0 is current, not LTS), squawk 2.66.0, ast-grep 0.45.3, gitleaks 8.30.1, cargo-deny 0.20.2, cargo-shear 1.14.0,
 cargo-llvm-cov 0.9.1, cargo-mutants 27.1.0, oasdiff 1.32.1, vacuum 0.30.6, sqlx-cli 0.9.0, mise 2026.9.16
 (GitHub releases). PostgreSQL 18.6 (`postgres:18.6-alpine`, 2026-09-21, pinned by digest), the major
 java-backend-template uses. Images `rust:1.98.1-slim-trixie` and `gcr.io/distroless/cc-debian13:nonroot`,
@@ -91,5 +91,6 @@ by digest. Actions `actions/checkout` v7.0.1, `jdx/mise-action` v5.0.0, `actions
 record left unestablished; vacuum 0.30.6 against java-backend-template's 0.30.5), the newest was taken.
 
 Every gate was run green with `node scripts/wall.mjs` on 2026-09-29, on Linux with Docker 29.8.1; the runs the
-record owed are recorded in `docs/GATES.md` and in the skills repo. GitHub Actions and GitLab CI are unrun:
-the workflow files are correct by reading and their actions are SHA-pinned.
+record owed are recorded in `docs/GATES.md` and in the skills repo. The template's own GitHub Actions workflow
+ran green on `e230ed9` (run 36506117148, 2026-09-29). The project-root workflow and GitLab CI are unrun: correct
+by reading, their actions SHA-pinned.

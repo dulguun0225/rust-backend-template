@@ -17,11 +17,14 @@ definition of done.
 - One crate per layer; `layering.toml` lists every allowed edge. `platform` (clock, ids, the logging facade, the
   catalogs, the pager) and `money` use no other first-party crate; `money-sql` is the one NUMERIC mapper; `db`
   holds `Tx`, the one transaction seam; `store` holds feature SQL; `web` holds the HTTP platform; `api` holds
-  one module per feature; `server` is the binary. Only `db`, `store` and `money-sql` may declare sqlx; only
-  `web` and `api` axum; only `server` anyhow.
+  one module per feature; `server` is the binary. Only `db`, `store` and `money-sql` may declare sqlx (and `api` as a
+  dev-dependency, for `#[sqlx::test]`); only `web` and `api` axum; only `server` anyhow. A crate lives at
+  `crates/<dir>/` with a row in `layering.toml`, and has no build script and no procedural-macro target; a
+  dependency by path is a workspace member.
 - Every statement is `sqlx::query!`, `query_as!` or `query_scalar!`, checked against the migrated schema; the
   unchecked functions, `QueryBuilder` and `AssertSqlSafe` are banned. Every statement runs in `tx.read(…)` or
-  `tx.write(…)`; a store function that writes takes `&mut db::WriteTx`.
+  `tx.write(…)`; a store function that writes takes `&mut db::WriteTx` and lives in a `store` feature
+  module. Only `db` makes the pool.
 - Errors are RFC 9457 problems whose `code` comes from a `wire_errors!` catalog; handlers return
   `web::problem::ApiError`, and the edge codes every other error response.
 - Every request body binds as `web::body::StrictJson<T>` and reaches the handler only through
@@ -81,9 +84,11 @@ the project `CLAUDE.md` it lifts and, in a standalone service, in this line.
   A new schema component needs a sample in `crates/api/tests/api/schemas.rs`.
 - A new ban is one line in `clippy.toml` plus one marked violation in `canaries/bans/src/lib.rs`; the wall
   refuses either without the other. A crate that needs a banned path gets it through `clippy-scopes.toml`, then
-  `node scripts/clippy-scopes.mjs --write`; never an `allow` or `expect` naming a ban lint, which the wall
-  refuses. Any other `allow` or `expect`, and any edit to a file that configures a gate, changes
-  `suppressions.txt` (`node scripts/check-suppressions.mjs --write`): commit it with a reason.
+  `node scripts/clippy-scopes.mjs --write`; never an `allow`, `expect` or `warn` naming a ban lint, which the
+  wall refuses, as it refuses `#[path]`, `include!`, and a `cfg` on `debug_assertions`, `coverage` or a
+  negated feature (code clippy never reads). Any other `allow` or `expect`, and any edit to a file that
+  configures a gate, the scripts under `scripts/` included, changes `suppressions.txt`
+  (`node scripts/check-suppressions.mjs --write`): commit it with a reason.
 - Integration test files start with `#![cfg(test)]`: clippy exempts unwrap, expect, panic and indexing only
   inside `cfg(test)` code. `tokio::select!` trips `integer_division_remainder_used` in its own expansion; use
   `std::future::poll_fn`, as `crates/server/src/main.rs` does.
