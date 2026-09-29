@@ -35,6 +35,10 @@
 //                        `arithmetic-side-effects-allowed` narrow a forbidden lint for chosen types, where the
 //                        canaries do not look.
 //   clippy-scope         a crate-local clippy.toml that is not the root ban list minus its declared exemptions.
+//   rustfmt-config       a rustfmt.toml other than the root one, or any .rustfmt.toml: rustfmt reads the nearest
+//                        file, so one in a crate replaces the root's (`disable_all_formatting = true` included).
+//   test-target          a member target with `test = false` or `harness = false`, or `autotests = false`: each
+//                        drops tests from `cargo test` without a line in any test file changing.
 //   overflow-checks      the release profile without `overflow-checks = true`, or `overflow-checks = false` in any
 //                        profile or package override, in a manifest or a cargo config.
 //   panic-abort          `panic = "abort"` in any profile, in a manifest or a cargo config: tower-http's
@@ -192,6 +196,12 @@ function checkManifests(root, findings) {
     const m = rel(pkg.manifest_path);
     const manifest = parseToml(readText(path.join(root, m)), m);
     if (manifest.lints?.workspace !== true) findings.push(`lints-workspace ${m}: no [lints] workspace = true`);
+    if (manifest.package?.autotests === false) findings.push(`test-target ${m}: autotests = false`);
+    for (const kind of ['lib', 'bin', 'test', 'example', 'bench']) {
+      for (const target of [manifest[kind] ?? []].flat()) {
+        for (const key of ['test', 'harness']) if (target[key] === false) findings.push(`test-target ${m}: [${kind}] ${key} = false`);
+      }
+    }
     if (!/^crates\/[^/]+\/Cargo\.toml$/.test(m)) findings.push(`member-location ${m}: a member lives at crates/<dir>/Cargo.toml`);
     for (const target of pkg.targets) {
       for (const kind of target.kind) {
@@ -355,6 +365,12 @@ function checkClippyFiles(root, findings) {
   for (const problem of checkScopes(root)) findings.push(`clippy-scope ${problem}`);
 }
 
+function checkRustfmtFiles(root, findings) {
+  for (const f of walk(root, (p) => /(^|\/)\.?rustfmt\.toml$/.test(p) && p !== 'rustfmt.toml' && !p.startsWith('scripts/fixtures/'))) {
+    findings.push(`rustfmt-config ${f}: rustfmt reads the nearest configuration, so this one replaces the root rustfmt.toml`);
+  }
+}
+
 function checkToolchain(root, findings) {
   const channel = parseToml(readText(path.join(root, 'rust-toolchain.toml')), 'rust-toolchain.toml').toolchain?.channel;
   if (!/^\d+\.\d+\.\d+$/.test(channel ?? '')) findings.push(`toolchain-exact rust-toolchain.toml: channel ${JSON.stringify(channel)} is not an exact version`);
@@ -371,6 +387,7 @@ export function lintConfigFindings(root, env = process.env) {
   const rootManifest = checkManifests(root, findings);
   checkSource(root, banLints(rootManifest), findings);
   checkClippyFiles(root, findings);
+  checkRustfmtFiles(root, findings);
   checkToolchain(root, findings);
   return findings;
 }
@@ -423,7 +440,7 @@ function selftest(repo) {
   if (envFindings.length !== 3) problems.push(`the environment check reported ${envFindings.length} of the 3 variables set:\n  ${envFindings.join('\n  ')}`);
   projectConfigCase(repo, problems);
   report(problems, 'lint-config fixture(s) not refused as expected');
-  const expected = ['allow-ban-lint', 'allow-invalid', 'cap-lints', 'cargo-config', 'cfg-clippy', 'cfg-unlinted', 'clippy-key', 'clippy-scope', 'compile-time-code', 'good', 'include', 'lints-workspace', 'member-location', 'nightly', 'overflow-checks', 'panic-abort', 'path-dependency', 'rustflags-env', 'stray-manifest', 'toolchain-exact'];
+  const expected = ['allow-ban-lint', 'allow-invalid', 'cap-lints', 'cargo-config', 'cfg-clippy', 'cfg-unlinted', 'clippy-key', 'clippy-scope', 'compile-time-code', 'good', 'include', 'lints-workspace', 'member-location', 'nightly', 'overflow-checks', 'panic-abort', 'path-dependency', 'rustflags-env', 'rustfmt-config', 'stray-manifest', 'test-target', 'toolchain-exact'];
   const missing = expected.filter((e) => !cases.some((c) => c.split('--')[0] === e));
   if (missing.length > 0) throw new Fail(`lint-config fixtures missing: ${missing.join(', ')}`);
   console.log(`lint-config selftest: ${cases.length} fixtures, each refused by its rule alone and on every marked line (good: none); a project root's cargo config is read`);

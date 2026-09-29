@@ -1,0 +1,8 @@
+[package]
+name = "member"
+version = "0.1.0"
+edition = "2024"
+autotests = false
+
+[lints]
+workspace = true

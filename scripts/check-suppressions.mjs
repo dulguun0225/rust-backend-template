@@ -4,8 +4,9 @@
 //                                           one shows up in the inventory beside it in the same change: the
 //                                           configuration files, the gates' own scripts, fixtures and canaries,
 //                                           and the root Cargo.toml's [workspace], lint and profile tables
-//   suppress <file> <text>                  every allow or expect attribute (outer, inner, cfg_attr) in
-//                                           first-party Rust and every squawk-ignore comment in a migration
+//   suppress <file> <text>                  every allow or expect attribute (outer, inner, cfg_attr), every
+//                                           #[ignore] test and every #[rustfmt::skip] in first-party Rust, and
+//                                           every squawk-ignore comment in a migration
 // A regenerated inventory that differs from the committed one fails, printing the difference; `--write`
 // rewrites it. It makes an edit visible in the change that makes it; it refuses none, since the same change can
 // rewrite it. Files Renovate moves (mise.toml, the Dockerfile, the workflows, [workspace.dependencies]) are not
@@ -69,7 +70,10 @@ export function inventory(root) {
   const suppressions = [];
   for (const f of walk(root, (p) => p.endsWith('.rs') && !p.startsWith('scripts/fixtures/') && !p.startsWith('canaries/'))) {
     for (const attr of attributes(tokens(readText(path.join(root, f))))) {
-      if (attr.toks.some((t, k) => (t.text === 'allow' || t.text === 'expect') && attr.toks[k + 1]?.text === '(')) {
+      const head = attr.toks[0]?.text;
+      const ignored = head === 'ignore' || (head === 'cfg_attr' && attr.toks.some((t, k) => k > 1 && t.text === 'ignore' && attr.toks[k - 1]?.text !== '::'));
+      const unformatted = attr.toks.some((t, k) => t.text === 'rustfmt' && attr.toks[k + 1]?.text === '::' && attr.toks[k + 2]?.text === 'skip');
+      if (ignored || unformatted || attr.toks.some((t, k) => (t.text === 'allow' || t.text === 'expect') && attr.toks[k + 1]?.text === '(')) {
         suppressions.push(`suppress ${f} #${attr.inner ? '!' : ''}[${attr.text}]`);
       }
     }
@@ -111,8 +115,11 @@ function selftest() {
     fs.writeFileSync(path.join(dir, 'crates', 'a', 'src', 'lib.rs'), '//! a\n');
     write(dir);
     if (inventoryDiff(dir).length !== 0) problems.push('a freshly written inventory differs from itself');
-    fs.writeFileSync(path.join(dir, 'crates', 'a', 'src', 'lib.rs'), '//! a\n#[expect(dead_code, reason = "x")]\nfn f() {}\n');
-    if (!inventoryDiff(dir).some((l) => l.startsWith('+ suppress crates/a/src/lib.rs #[expect(dead_code'))) problems.push('a new expect attribute was not reported');
+    fs.writeFileSync(path.join(dir, 'crates', 'a', 'src', 'lib.rs'), '//! a\n#[expect(dead_code, reason = "x")]\nfn f() {}\n#[test]\n#[ignore = "slow"]\nfn t() {}\n#[rustfmt::skip]\nfn g() {}\n');
+    const suppressed = inventoryDiff(dir);
+    for (const want of ['#[expect(dead_code', '#[ignore', '#[rustfmt::skip]']) {
+      if (!suppressed.some((l) => l.startsWith(`+ suppress crates/a/src/lib.rs ${want}`))) problems.push(`a new ${want} attribute was not reported`);
+    }
     write(dir);
     fs.writeFileSync(path.join(dir, 'clippy.toml'), 'disallowed-methods = []\nallow-unwrap-in-tests = true\n');
     if (!inventoryDiff(dir).some((l) => l.startsWith('+ config clippy.toml'))) problems.push('an edited clippy.toml was not reported');
@@ -135,7 +142,7 @@ function selftest() {
     fs.rmSync(dir, { recursive: true, force: true });
   }
   report(problems, 'suppression selftest case(s) failed');
-  console.log('suppression selftest: a new suppression, an edited clippy.toml, lint table, profile table, script and fixture tree are each reported; a moved digest is not');
+  console.log('suppression selftest: a new expect, ignore and rustfmt::skip, an edited clippy.toml, lint table, profile table, script and fixture tree are each reported; a moved digest is not');
 }
 
 main(() => {
