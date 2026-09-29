@@ -83,11 +83,43 @@ pub fn empty_request(method: Method, uri: &str) -> Request<Body> {
 }
 
 /// Installs the service's JSON log format over an in-memory sink for the rest of the test's thread.
+///
+/// Tests run in parallel, and tracing caches each call site's interest once for every thread. While one
+/// dispatcher is registered, tracing computes that interest from the registering thread's own default, so a
+/// test that logs with no capture of its own would cache "never" for a call site another test is capturing,
+/// and that test would miss the event (run 2026-09-29: 3 in 100 runs). A global subscriber that answers
+/// "sometimes" for every call site and enables nothing keeps a second dispatcher registered, so no call site
+/// is ever cached as "never".
 pub fn capture_log() -> (Capture, tracing::subscriber::DefaultGuard) {
+    static GLOBAL: std::sync::Once = std::sync::Once::new();
+    GLOBAL.call_once(|| {
+        // Err only when a global subscriber is already set, which then keeps a second dispatcher registered too.
+        let _ignored = tracing::subscriber::set_global_default(AskEveryTime).is_ok();
+    });
     let capture = Capture::default();
     let guard =
         tracing::subscriber::set_default(platform::log::json_subscriber(capture.clone(), tracing::Level::DEBUG));
     (capture, guard)
+}
+
+/// A subscriber that enables nothing and asks to be asked again at every call site.
+struct AskEveryTime;
+
+impl tracing::Subscriber for AskEveryTime {
+    fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> tracing::subscriber::Interest {
+        tracing::subscriber::Interest::sometimes()
+    }
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        false
+    }
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+    fn event(&self, _: &tracing::Event<'_>) {}
+    fn enter(&self, _: &tracing::span::Id) {}
+    fn exit(&self, _: &tracing::span::Id) {}
 }
 
 /// A request type for the probe route, whose path has a variable the worked example's body route lacks.
