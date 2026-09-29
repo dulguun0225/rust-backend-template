@@ -1,0 +1,6 @@
+env:
+  RUSTFLAGS: -Aclippy::unwrap_used
+jobs:
+  wall:
+    steps:
+      - run: cargo clippy --workspace

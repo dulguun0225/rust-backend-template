@@ -1,0 +1,12 @@
+# Three serde attributes accept input the type does not declare: flatten (deny_unknown_fields does not hold on
+# a struct using it), default (a missing member becomes a value), and other (an unknown enum tag becomes a
+# variant). Each is banned wherever a serde attribute appears, cfg_attr included.
+id: serde-banned-attributes
+language: Rust
+severity: error
+message: 'serde flatten, default and other are banned: each accepts input the type does not declare'
+rule:
+  any:
+    - kind: attribute_item
+    - kind: inner_attribute_item
+  regex: '(?s)\bserde\s*\((.*\bflatten\b|.*\bdefault\b|(.*[(,])?\s*other\s*[,)])'

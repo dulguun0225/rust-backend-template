@@ -1,0 +1,4 @@
+jobs:
+  wall:
+    steps:
+      - run: cargo clippy --workspace --all-targets -- --cap-lints warn

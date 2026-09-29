@@ -1,0 +1,88 @@
+# cargo-deny: advisories, licences, bans and sources over the whole dependency graph, each failing the build.
+# Pinned at 0.20.2 (mise.toml); 0.19.1 fixed graph pruning that printed "bans ok" over a banned crate and a
+# database staleness limit of about 14.8 years. scripts/cargo-deny.mjs runs it, after proving on a generated
+# canary workspace that each of the four checks refuses what it should.
+
+[graph]
+all-features = true
+
+[advisories]
+# A vulnerability or unsound advisory fails; so does a yanked version and an unmaintained crate anywhere in
+# the graph. An exception goes in `ignore` with its advisory id and a reason.
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+ignore = []
+
+[licenses]
+# Deny by default: a licence not listed fails, and so does a crate whose licence cannot be determined.
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "Unicode-3.0",
+  "Zlib",
+]
+confidence-threshold = 0.93
+exceptions = []
+
+[licenses.private]
+# The workspace's own crates are unpublished (publish = false) and carry no licence.
+ignore = true
+
+[bans]
+# Two semver-incompatible versions of one crate are two sets of types that do not interoperate (two sqlx
+# versions have distinct Transaction types). Every duplicate present on the pin date is listed in `skip`
+# with the crate that pulls it; a new one fails until it is examined.
+multiple-versions = "deny"
+# A `*` requirement resolves to whatever is newest; path dependencies inside the workspace are exempt.
+wildcards = "deny"
+allow-wildcard-paths = true
+skip = [
+  { crate = "block-buffer@0.10.4", reason = "sha2 0.10 through sqlx-core 0.9.0; 0.12 through sha2 0.11" },
+  { crate = "cpufeatures@0.2.17", reason = "sha2 0.10 through sqlx-core 0.9.0" },
+  { crate = "crypto-common@0.1.6", reason = "sha2 0.10 through sqlx-core 0.9.0" },
+  { crate = "digest@0.10.7", reason = "sha2 0.10 through sqlx-core 0.9.0" },
+  { crate = "sha2@0.10.9", reason = "sqlx-core 0.9.0 depends on 0.10; sqlx-postgres 0.9.0 on 0.11" },
+  { crate = "getrandom@0.2.17", reason = "ring 0.17 (rustls) depends on 0.2" },
+  { crate = "hashbrown@0.16.1", reason = "hashlink 0.11 through sqlx-core 0.9.0" },
+  { crate = "syn@2.0.119", reason = "most proc-macro crates are on syn 2; displaydoc is on 3" },
+  { crate = "windows-sys@0.52.0", reason = "ring 0.17 on Windows targets" },
+]
+deny = [
+  # The crate-graph layering, second host beside scripts/check-layering.mjs: only the named crates may
+  # depend on these directly. Name-matched, and a wrapper can re-export the banned crate's types.
+  { crate = "sqlx", wrappers = ["db", "store", "money-sql", "api"] },
+  { crate = "axum", wrappers = ["web", "api", "utoipa-axum"] },
+  { crate = "anyhow", wrappers = ["server"] },
+  { crate = "bigdecimal", wrappers = ["money-sql", "sqlx-postgres", "sqlx-core"] },
+  # Decisions the stack took the other way (docs/history/rust-backend-stack.md in dulguun0225/skills).
+  { crate = "rust_decimal", reason = "rounds silently in * and /; money is money::Money" },
+  { crate = "rusty-money", reason = "stores rust_decimal" },
+  { crate = "fastnum", reason = "an inexact result is NaN in release" },
+  { crate = "diesel", reason = "no check of schema.rs against the live database" },
+  { crate = "sea-orm", reason = "its query builder is not checked against the schema" },
+  { crate = "refinery", reason = "migrations may be Rust squawk cannot read" },
+  { crate = "actix-web", reason = "route middleware order is a runtime check" },
+  { crate = "rocket", reason = "no release since 2024-05-23" },
+  { crate = "poem", reason = "no release since 2025-07-28" },
+  { crate = "aide", reason = "no stable release with schemars 1.x" },
+  { crate = "chrono", reason = "time is the one date-time crate; sqlx.toml prefers it" },
+  { crate = "openssl-sys", reason = "TLS is rustls" },
+  { crate = "native-tls", reason = "TLS is rustls" },
+]
+features = [
+  # uuid v4 would give an id producer outside platform::ids; axum's json and form features would give a
+  # body extractor outside web::body::StrictJson.
+  { crate = "uuid", deny = ["v4"] },
+  { crate = "axum", deny = ["json", "form", "multipart"] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

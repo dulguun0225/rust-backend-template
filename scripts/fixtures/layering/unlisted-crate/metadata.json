@@ -1,0 +1,47 @@
+{
+ "packages": [
+  {
+   "name": "platform",
+   "dependencies": [
+    {
+     "name": "serde",
+     "kind": null
+    }
+   ]
+  },
+  {
+   "name": "db",
+   "dependencies": [
+    {
+     "name": "sqlx",
+     "kind": null
+    }
+   ]
+  },
+  {
+   "name": "api",
+   "dependencies": [
+    {
+     "name": "db",
+     "kind": null
+    },
+    {
+     "name": "platform",
+     "kind": null
+    },
+    {
+     "name": "axum",
+     "kind": null
+    },
+    {
+     "name": "sqlx",
+     "kind": "dev"
+    }
+   ]
+  },
+  {
+   "name": "extra",
+   "dependencies": []
+  }
+ ]
+}

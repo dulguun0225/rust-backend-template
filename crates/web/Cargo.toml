@@ -20,8 +20,5 @@ utoipa.workspace = true
 utoipa-axum.workspace = true
 uuid.workspace = true
 
-[dev-dependencies]
-tower.workspace = true
-
 [lints]
 workspace = true

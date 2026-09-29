@@ -1,0 +1,31 @@
+# A missing Option<T> member deserializes as None with no error, by serde's design, and no container switch
+# changes that. An Option field of a Deserialize type carries deserialize_with = "Deserialize::deserialize",
+# which makes the member required while null stays allowed. Matched by kind and regex: the pattern form
+# Option<$T> is a parse error. Not seen: a type alias of Option.
+id: serde-option-field
+language: Rust
+severity: error
+message: An Option field of a Deserialize type carries deserialize_with = "Deserialize::deserialize", so a missing member is an error
+rule:
+  kind: field_declaration
+  has:
+    field: type
+    regex: '^(::)?((std|core)::option::)?Option\s*<'
+  inside:
+    stopBy: end
+    any:
+      - kind: struct_item
+      - kind: enum_item
+    follows:
+      stopBy:
+        not:
+          any: [{ kind: attribute_item }, { kind: line_comment }, { kind: block_comment }]
+      kind: attribute_item
+      regex: '\bDeserialize\b'
+  not:
+    follows:
+      stopBy:
+        not:
+          any: [{ kind: attribute_item }, { kind: line_comment }, { kind: block_comment }]
+      kind: attribute_item
+      regex: 'deserialize_with\s*=\s*"(serde::)?Deserialize::deserialize"'

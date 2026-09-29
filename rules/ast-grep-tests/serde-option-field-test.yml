@@ -1,0 +1,35 @@
+id: serde-option-field
+valid:
+  - |
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct A {
+        #[serde(deserialize_with = "Deserialize::deserialize")]
+        x: Option<u8>,
+    }
+  - |
+    #[derive(Serialize)]
+    struct S { x: Option<u8> }
+  - |
+    #[derive(Deserialize)]
+    struct A {
+        /// doc
+        #[serde(deserialize_with = "serde::Deserialize::deserialize")]
+        /// more doc
+        x: Option<u8>,
+    }
+invalid:
+  - |
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct A { x: Option<u8> }
+  - |
+    #[derive(Deserialize)]
+    struct A { x: std::option::Option<u8> }
+  - |
+    #[derive(Deserialize)]
+    /// doc
+    struct A { y: u8, x: ::core::option::Option<String> }
+  - |
+    #[derive(Deserialize)]
+    enum E { V { x: Option<u8> } }

@@ -1,0 +1,20 @@
+id: serde-banned-attributes
+valid:
+  - |
+    #[serde(rename = "other", deny_unknown_fields)]
+    struct A { x: u8 }
+  - |
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    struct B;
+invalid:
+  - |
+    struct A { #[serde(flatten)] x: B }
+  - |
+    struct A { #[serde(default)] x: u8 }
+  - |
+    #[serde(default, deny_unknown_fields)]
+    struct A { x: u8 }
+  - |
+    enum E { A, #[serde(other)] Unknown }
+  - |
+    struct A { #[cfg_attr(feature = "x", serde(default = "f"))] x: u8 }

@@ -14,8 +14,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 db.workspace = true
-proptest.workspace = true
-tokio.workspace = true
 
 [lints]
 workspace = true

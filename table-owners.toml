@@ -1,0 +1,6 @@
+# Which feature owns, and so alone writes, each table. Any feature may read any table. A feature is a module
+# of crates/store (src/<feature>.rs or src/<feature>/), and its tests are crates/store/tests/<feature>.rs.
+# scripts/check-sql.mjs fails on a table no row names, a row naming no table, a write by another feature,
+# and a function that writes while naming another feature's table.
+[owners]
+greeting = "greeting"

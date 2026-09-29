@@ -1,0 +1,3 @@
+disallowed-methods = [
+  { path = "std::thread::slep", reason = "misspelled", allow-invalid = true },
+]

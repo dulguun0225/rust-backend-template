@@ -1,0 +1,22 @@
+# The suppression inventory: every file that decides what a gate refuses, hashed, and every lint or
+# migration-lint suppression in the tree. scripts/check-suppressions.mjs regenerates it and fails on any
+# difference; `node scripts/check-suppressions.mjs --write` rewrites it. A change here is a change to what
+# the gates refuse: make it in its own commit, and say why.
+config .squawk.toml sha256:71d98b086c75f7ac63e248364dfb51dab5305bf3b864beb5ab2b6c4b8c8a0ac2
+config clippy-scopes.toml sha256:496b4e6adbcdfea1e222d83c4ef10673c7dec74db361a656d1f3254adc555f23
+config clippy.toml sha256:995d6713e4af9c3a09b196f9323af2e8642f81a11348b62ad52b1be9a545a167
+config crates/money-sql/sqlx.toml sha256:ccf5578ed0335737e9ede10f185a947dafe65f5a42c0cf60729b29b44611b0ee
+config crates/store/sqlx.toml sha256:b62fec853cb5e07e679c40ddd561cba5040cb6ef1c4a375872646433e659ce9f
+config deny.toml sha256:13e874dee328c82de259f47bc4125c7d3fb7b008a42c20911ef77ff2a7d4234f
+config layering.toml sha256:ca61b1d65db1975aee4197c88d11fe1c8c9d0a7f485fffb97845e78088e7f9d1
+config rules/ast-grep/serde-banned-attributes.yml sha256:2e14cf349545c0b763417a03f0a499d9ec3baed496de3f69dae8cf423b0b4a78
+config rules/ast-grep/serde-deny-unknown-fields.yml sha256:7d79f3759a83e65fc7416faf94a48db783277e5728be6eba031a1968e8821dd5
+config rules/ast-grep/serde-option-field.yml sha256:e710d8edefacac3ed518b1d658fe3c9e35f7dfdacf29e9716cfad28c8e4c976d
+config rules/openapi.yaml sha256:add305e014ebab1a6511b14e61e893c842b58d27489691f2a6fcc33765fbd8d8
+config rust-toolchain.toml sha256:3895b0d9a6a074be0f37363f6971c3311c0e1617703b377b1f1eca40128f05cc
+config rustfmt.toml sha256:2401031c53add5a12459564db5cb29986020477c69938c3479e60169c5798137
+config sgconfig.yml sha256:2296096bc2eb4134c44c5980ac0e588ef304f71be37cfb9ae17f27633fd75118
+config table-owners.toml sha256:c08a788e43d29dd86b91f6d91685583dec7060a6581aed82d1844a3039bba628
+config Cargo.toml [workspace.lints.rust] sha256:1ef29d1d42ae4b7b111e9549b84d7b2d1e65f282395e5259e331e6a0a5a30335
+config Cargo.toml [workspace.lints.clippy] sha256:5d01a0e2d45e9353f70175392bdec9098b5b995653175e5edf632f970ecbdeca
+config Cargo.toml [profile.release] sha256:1ea493db8d0e3d6e91b6eff1affa73e3f37a29dac96bff30cc1635d1d91988cb

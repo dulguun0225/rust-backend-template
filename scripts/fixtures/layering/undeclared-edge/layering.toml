@@ -1,0 +1,15 @@
+[crates.platform]
+depends = []
+
+[crates.db]
+depends = []
+
+[crates.api]
+depends = ["db", "platform"]
+
+[controlled.sqlx]
+normal = ["db"]
+dev = ["api"]
+
+[controlled.axum]
+normal = ["api"]

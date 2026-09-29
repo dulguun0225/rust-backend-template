@@ -1,0 +1,7 @@
+# ast-grep: source rules no compiler lint carries. `ast-grep scan crates` exits 1 on a match of a rule with
+# severity error (every rule here); `ast-grep test` runs each rule over its valid and invalid cases in
+# rules/ast-grep-tests. Matching is on the syntax tree with no type resolution.
+ruleDirs:
+  - rules/ast-grep
+testConfigs:
+  - testDir: rules/ast-grep-tests

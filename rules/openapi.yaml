@@ -1,0 +1,87 @@
+# The document lints java-backend-api names under *vacuum lints*, carried over from java-backend-template: no
+# offset or page parameter, no `PATCH`, `limit` declares a maximum, every error response uses the problem
+# schema, a temporal property's name matches its format, and every request-body schema is closed.
+# Spectral-compatible syntax, run by vacuum (pinned in mise.toml) from scripts/openapi.mjs, which wall.mjs
+# calls. Nothing here is advisory: every rule is `severity: error` and the exit code is the gate.
+#
+# The document is written by a test (crates/api/tests/api/openapi.rs) and never hand-edited: a failure here is
+# a code change.
+#
+# Both two-directional rules keep one `given` and put the second half in a `schema` function: vacuum applies
+# every entry of a `then` array to every entry of a `given` array, so a second path would run the wrong check.
+rules:
+  no-offset-or-page-parameter:
+    description: Pagination is keyset only; offset and page-number parameters are banned by name.
+    given: "$.paths[*][*].parameters[?(@.in=='query')].name"
+    severity: error
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: "^(offset|page|pageNumber|pageSize)$"
+
+  no-patch-operation:
+    description: PATCH and JSON Merge Patch are banned; a partial update is a named operation.
+    given: "$.paths[*].patch"
+    severity: error
+    then:
+      function: falsy
+
+  limit-declares-maximum:
+    description: A `limit` parameter declares a hard maximum in the document, not only in code.
+    given: "$.paths[*][*].parameters[?(@.name=='limit')].schema"
+    severity: error
+    then:
+      field: maximum
+      function: defined
+
+  error-responses-use-problem-schema:
+    description: Every 4xx and 5xx response is an RFC 9457 problem document carrying the Problem schema.
+    given: '$.paths[*][*].responses[?(@property.match(/^[45]\d\d$/))].content'
+    severity: error
+    # Unresolved, so the `$ref` is still a string: vacuum inlines component refs before a rule sees them.
+    resolved: false
+    then:
+      - field: application/problem+json
+        function: defined
+      - field: application/problem+json
+        function: schema
+        functionOptions:
+          schema:
+            type: object
+            required: [schema]
+            properties:
+              schema:
+                type: object
+                required: ["$ref"]
+                properties:
+                  $ref:
+                    type: string
+                    pattern: "/Problem$"
+
+  temporal-name-matches-format:
+    description: "A property named `*At` carries `format: date-time`, and only such a property may carry it."
+    # Both halves live in the `given`: each path selects only an offending property, by name (the `~` key
+    # selector), and the single `then` fails whatever it selects. vacuum's `schema` function is silent on a
+    # map node, and a `field: format` check cannot see a property whose `format` is missing altogether.
+    given:
+      - "$.components.schemas[*].properties[?(@property.match(/At$/) && @.format != 'date-time')]~"
+      - "$.components.schemas[*].properties[?(@.format == 'date-time' && !@property.match(/At$/))]~"
+    severity: error
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: ".*"
+
+  request-body-schemas-are-closed:
+    description: "A request-body schema declares `additionalProperties: false`: the strict body reader refuses a member the type does not declare, so the contract says so."
+    # Resolved (the default), so a `$ref` to a component schema is checked as that schema. Two checks, because
+    # `falsy` alone passes a schema with no `additionalProperties` at all, which is an open schema: absent fails
+    # on `defined`, `true` fails on `falsy`. Top-level request schema only; a request member is a scalar, which
+    # crates/api/tests/api/openapi.rs holds, so no nested object schema exists to leave open.
+    given: "$.paths[*][*].requestBody.content[*].schema"
+    severity: error
+    then:
+      - field: additionalProperties
+        function: defined
+      - field: additionalProperties
+        function: falsy

@@ -1,0 +1,37 @@
+id: serde-deny-unknown-fields
+valid:
+  - |
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct A { x: u8 }
+  - |
+    #[serde(deny_unknown_fields, rename_all = "camelCase")]
+    #[derive(serde::Deserialize)]
+    struct Swapped { x: u8 }
+  - |
+    #[derive(Serialize)]
+    struct OnlySer { x: u8 }
+  - |
+    #[derive(Deserialize)]
+    /// doc between
+    #[serde(deny_unknown_fields)]
+    enum E { A { x: u8 } }
+invalid:
+  - |
+    #[derive(Deserialize)]
+    struct A { x: u8 }
+  - |
+    #[derive(Debug, serde::Deserialize)]
+    /// A doc comment between the derive and the struct
+    struct Doc { x: u8 }
+  - |
+    #[cfg_attr(test, derive(Deserialize))]
+    struct CfgAttr { x: u8 }
+  - |
+    #[derive(Deserialize)]
+    enum E { A { x: u8 } }
+  - |
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    // plain comment
+    pub struct B { x: u8 }

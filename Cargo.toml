@@ -27,7 +27,6 @@ publish = false
 # First-party crates, by path.
 platform = { path = "crates/platform" }
 money = { path = "crates/money" }
-money-sql = { path = "crates/money-sql" }
 db = { path = "crates/db" }
 store = { path = "crates/store" }
 web = { path = "crates/web" }
@@ -54,7 +53,7 @@ serde_json = "=1.0.151"
 serde_path_to_error = "=0.1.20"
 uuid = { version = "=1.26.1", features = ["v7", "serde"] }
 time = { version = "=0.3.55", features = ["serde", "formatting", "parsing"] }
-base64 = "=0.23.1"
+base64 = "=0.22.1"
 
 # Errors: thiserror in every library crate; anyhow only in the server binary (layering.toml, clippy.toml).
 thiserror = "=2.0.21"

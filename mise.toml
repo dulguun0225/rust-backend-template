@@ -1,0 +1,23 @@
+[tools]
+# Exact pins, each checked newest on 2026-09-29. The Rust toolchain itself is rust-toolchain.toml's, read by
+# rustup; this file pins what runs beside it. `mise install` installs every entry.
+# scripts/*.mjs run on this; Node rather than bash so the wall runs the same on Linux, macOS and Windows.
+node = "24.21.0"
+# Migration lint (scripts/squawk-changed-migrations.mjs).
+"github:sbdchd/squawk" = "2.66.0"
+# Source rules: the serde rules under rules/ast-grep (sgconfig.yml).
+ast-grep = "0.45.3"
+# Advisories, licences, bans, sources (deny.toml).
+cargo-deny = "0.20.2"
+# Unused dependencies.
+"github:Boshen/cargo-shear" = "1.14.0"
+# Line, region and function coverage floors.
+"github:taiki-e/cargo-llvm-cov" = "0.9.1"
+# Mutation testing over the diff.
+"github:sourcefrog/cargo-mutants" = "27.1.0"
+# Breaking changes to the OpenAPI document against the base branch.
+"github:oasdiff/oasdiff" = "1.32.1"
+# The OpenAPI ruleset linter (rules/openapi.yaml). mise's registry maps `vacuum` to aqua:daveshanley/vacuum.
+vacuum = "0.30.6"
+# `sqlx migrate` and `cargo sqlx prepare`; no release binaries exist, so mise builds it with cargo, --locked.
+"cargo:sqlx-cli" = { version = "0.9.0", default-features = false, features = "postgres,rustls" }

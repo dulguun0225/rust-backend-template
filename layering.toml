@@ -1,0 +1,58 @@
+# The crate graph, declared. A crate cannot use a crate it does not declare, so these edges are the layering:
+# scripts/check-layering.mjs reads every workspace member's declared dependencies from `cargo metadata` and
+# fails on a first-party edge not listed here, a controlled external crate declared by a crate not listed
+# for it, a member with no entry, or an entry for no member. cargo-deny's `wrappers` (deny.toml) holds the
+# same line for sqlx, axum, anyhow and bigdecimal over the whole graph.
+#
+# Inside one crate only `pub(crate)` reaches module layering; no maintained Rust tool checks module edges the
+# way ArchUnit does, so a feature is a module in `store` and in `api`, and features not reaching into each
+# other is the one layering rule no gate here holds (docs/GATES.md, Not reached).
+
+# First-party edges: `depends` for normal dependencies, `dev` for dev-dependencies.
+[crates.platform]
+depends = []
+
+[crates.money]
+depends = []
+
+[crates.money-sql]
+depends = ["money"]
+dev = ["db"]
+
+[crates.db]
+depends = []
+
+[crates.store]
+depends = ["db", "platform"]
+
+[crates.web]
+depends = ["platform"]
+
+[crates.api]
+depends = ["db", "platform", "store", "web"]
+
+[crates.server]
+depends = ["api", "db", "platform", "web"]
+
+# External crates only the named crates may declare.
+[controlled.sqlx]
+normal = ["db", "money-sql", "store"]
+dev = ["api"]
+
+[controlled.bigdecimal]
+normal = ["money-sql"]
+
+[controlled.axum]
+normal = ["api", "web"]
+
+[controlled.tower-http]
+normal = ["web"]
+
+[controlled.utoipa-axum]
+normal = ["api", "web"]
+
+[controlled.anyhow]
+normal = ["server"]
+
+[controlled.tracing-subscriber]
+normal = ["platform"]

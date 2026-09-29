@@ -1,0 +1,26 @@
+# serde ignores unknown members by default, and deny_unknown_fields is per type with no crate-wide setting.
+# Every type deriving Deserialize, struct or enum, carries it. The derive is found through any run of
+# attributes and comments before the item, so a doc comment between the derive and the struct, a swapped
+# attribute order and cfg_attr(..., derive(Deserialize)) are all seen. Not seen: a derive produced by another
+# macro, and a hand-written Deserialize impl.
+id: serde-deny-unknown-fields
+language: Rust
+severity: error
+message: A type deriving Deserialize carries #[serde(deny_unknown_fields)]
+rule:
+  any:
+    - kind: struct_item
+    - kind: enum_item
+  follows:
+    stopBy:
+      not:
+        any: [{ kind: attribute_item }, { kind: line_comment }, { kind: block_comment }]
+    kind: attribute_item
+    regex: '\bDeserialize\b'
+  not:
+    follows:
+      stopBy:
+        not:
+          any: [{ kind: attribute_item }, { kind: line_comment }, { kind: block_comment }]
+      kind: attribute_item
+      regex: '\bdeny_unknown_fields\b'

@@ -1,0 +1,172 @@
+{
+  "components": {
+    "schemas": {
+      "CreateGreetingRequest": {
+        "additionalProperties": false,
+        "description": "Creates one greeting. Only the fields this operation writes; the id is assigned by the service.",
+        "properties": {
+          "name": {
+            "description": "Who to greet, 1 to 100 characters after trimming.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "FieldError": {
+        "description": "One entry of a validation.failed problem.",
+        "properties": {
+          "code": {
+            "description": "A field code, e.g. validation.required.",
+            "type": "string"
+          },
+          "detail": {
+            "description": "Caller-safe text naming what was expected, e.g. `expected boolean`; never the value sent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pointer": {
+            "description": "RFC 6901 JSON pointer to the member, e.g. /name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pointer",
+          "code"
+        ],
+        "type": "object"
+      },
+      "GreetingView": {
+        "description": "A greeting as the service returns it.",
+        "properties": {
+          "createdAt": {
+            "description": "When it was created.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "The greeting's opaque id.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "description": "Who is greeted.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "Problem": {
+        "description": "An RFC 9457 problem document.",
+        "properties": {
+          "code": {
+            "description": "Stable machine code from one of the catalogs.",
+            "type": "string"
+          },
+          "detail": {
+            "description": "Caller-safe text, never the value sent. On validation.malformed-body: where the JSON stopped being\nwell formed, or that the body is missing or not an object.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "errors": {
+            "description": "Present only on validation.failed.",
+            "items": {
+              "$ref": "#/components/schemas/FieldError"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "incidentId": {
+            "description": "Present only on platform.internal (500): the request's correlation id, which the server log carries.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "The HTTP status.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "description": "The status's reason phrase.",
+            "type": "string"
+          },
+          "type": {
+            "description": "Always `about:blank`: `code` carries the machine meaning.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "starter",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/greetings": {
+      "post": {
+        "operationId": "createGreeting",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGreetingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GreetingView"
+                }
+              }
+            },
+            "description": "Created. `Location` is the new greeting's URL."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "validation.failed (a field rule, an undeclared member, a wrong JSON type), validation.malformed-body"
+          }
+        },
+        "summary": "Create one greeting.",
+        "tags": [
+          "greeting"
+        ]
+      }
+    }
+  }
+}
