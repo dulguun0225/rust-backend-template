@@ -71,7 +71,10 @@ async fn pages_walk_newest_first_without_gaps_or_repeats(pool: PgPool) {
     let mut seen = Vec::new();
     let mut cursor = None;
     loop {
-        let page = tx.read(async |r| store::greeting::page(r, cursor, 3).await).await.unwrap();
+        let page = tx
+            .read(async |r| store::greeting::page(r, cursor, std::num::NonZeroU16::new(3).unwrap()).await)
+            .await
+            .unwrap();
         seen.extend(page.items.iter().map(|row| (row.created_at, row.id)));
         match page.next_cursor {
             Some(next) => cursor = platform::pager::decode(Some(&next)).unwrap(),

@@ -6,6 +6,8 @@
 //! A query pages with `WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
 //! fetching `limit + 1` rows, and hands them to [`to_page`].
 
+use std::num::NonZeroU16;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use time::OffsetDateTime;
@@ -73,10 +75,11 @@ pub fn decode(token: Option<&str>) -> Result<Option<Cursor>, InvalidCursor> {
 }
 
 /// Assembles a page from the `limit + 1` rows a query fetched: an extra row means a next page exists, and the
-/// last row kept supplies its cursor.
+/// last row kept supplies its cursor. The limit is at least one: a page that kept no row would have no row to
+/// point past, and would end the list while rows remain.
 #[must_use]
-pub fn to_page<T>(mut fetched: Vec<T>, limit: u16, position: impl Fn(&T) -> Cursor) -> Page<T> {
-    let limit = usize::from(limit);
+pub fn to_page<T>(mut fetched: Vec<T>, limit: NonZeroU16, position: impl Fn(&T) -> Cursor) -> Page<T> {
+    let limit = usize::from(limit.get());
     if fetched.len() <= limit {
         return Page { items: fetched, next_cursor: None };
     }
@@ -90,6 +93,7 @@ mod tests {
     use super::{Cursor, InvalidCursor, decode, encode, to_page};
     use base64::Engine as _;
     use proptest::prelude::*;
+    use std::num::NonZeroU16;
     use time::macros::datetime;
     use uuid::Uuid;
 
@@ -99,6 +103,10 @@ mod tests {
 
     fn reencode(bytes: &[u8]) -> String {
         super::URL_SAFE_NO_PAD.encode(bytes)
+    }
+
+    fn limit(n: u16) -> NonZeroU16 {
+        NonZeroU16::new(n).unwrap()
     }
 
     fn cursor(n: u128) -> Cursor {
@@ -131,14 +139,21 @@ mod tests {
     #[test]
     fn a_page_drops_the_extra_row_and_points_past_the_last_kept() {
         let rows: Vec<u128> = (1..=4).collect();
-        let page = to_page(rows, 3, |n| cursor(*n));
+        let page = to_page(rows, limit(3), |n| cursor(*n));
         assert_eq!(page.items, [1, 2, 3]);
         assert_eq!(decode(page.next_cursor.as_deref()), Ok(Some(cursor(3))));
     }
 
     #[test]
+    fn a_page_of_one_points_past_its_row() {
+        let page = to_page(vec![1_u128, 2], limit(1), |n| cursor(*n));
+        assert_eq!(page.items, [1]);
+        assert_eq!(decode(page.next_cursor.as_deref()), Ok(Some(cursor(1))));
+    }
+
+    #[test]
     fn the_last_page_has_no_cursor() {
-        let page = to_page(vec![1_u128, 2], 3, |n| cursor(*n));
+        let page = to_page(vec![1_u128, 2], limit(3), |n| cursor(*n));
         assert_eq!(page.items, [1, 2]);
         assert_eq!(page.next_cursor, None);
     }

@@ -2,6 +2,8 @@
 
 use db::versioned::{self, Outcome, OutcomeError};
 use db::{DbError, Reads, WriteTx};
+use std::num::NonZeroU16;
+
 use platform::pager::{self, Cursor, Page};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -85,7 +87,11 @@ pub async fn rename(tx: &mut WriteTx, id: Uuid, expected_version: i64, name: &st
 ///
 /// # Errors
 /// [`DbError`].
-pub async fn page(tx: &mut impl Reads, cursor: Option<Cursor>, limit: u16) -> Result<Page<GreetingRow>, DbError> {
+pub async fn page(
+    tx: &mut impl Reads,
+    cursor: Option<Cursor>,
+    limit: NonZeroU16,
+) -> Result<Page<GreetingRow>, DbError> {
     let (after_at, after_id) = cursor.map_or((None, None), |c| (Some(c.sort), Some(c.id)));
     let fetched = sqlx::query_as!(
         GreetingRow,
@@ -95,7 +101,7 @@ pub async fn page(tx: &mut impl Reads, cursor: Option<Cursor>, limit: u16) -> Re
          limit $3",
         after_at,
         after_id,
-        i64::from(limit).checked_add(1)
+        i64::from(limit.get()).checked_add(1)
     )
     .fetch_all(tx.conn())
     .await?;
