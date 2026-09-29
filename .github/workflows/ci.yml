@@ -1,0 +1,53 @@
+# The template's own wall: this repository *is* the backend, so the job runs scripts/wall.mjs at the root. A
+# project that vendors the template into backend/ runs the same script from project-root/.github/workflows/ci.yml
+# with working-directory: backend. Every action is pinned to a commit SHA. The Rust toolchain is what
+# rust-toolchain.toml pins (rustup, preinstalled on the runner, installs it on first use); every other tool is
+# what mise.toml pins, installed by mise here exactly as on a developer machine.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          version: 2026.9.16
+      - name: Actions are SHA-pinned (template's own workflow and the project-root one it ships)
+        run: node project-root/scripts/check-action-pins.mjs . && node project-root/scripts/check-action-pins.mjs project-root
+      - name: Backend wall
+        run: node scripts/wall.mjs "${{ github.event.pull_request.base.sha || github.event.before }}"
+      - name: Keep the verdict artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verdicts
+          path: |
+            target/mutants/mutants.out
+            target/openapi
+            target/snapshots
+          if-no-files-found: ignore

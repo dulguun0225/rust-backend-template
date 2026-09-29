@@ -1,0 +1,78 @@
+# The project wall on GitLab, mirroring .github/workflows/ci.yml job for job: `backend` runs backend/scripts/wall.mjs,
+# `frontend` runs scripts/frontend-gate.mjs. Everything fails on its own exit code; nothing is advisory. The Rust
+# toolchain is what backend/rust-toolchain.toml pins, installed by rustup; every other tool is what
+# backend/mise.toml pins, installed by mise, exactly as on a developer machine.
+#
+# Runner requirement: the wall starts a throwaway PostgreSQL container. This file uses the docker:dind service,
+# which needs a docker-executor runner with `privileged = true`; the container's port is published on the `docker`
+# host, which WALL_DB_HOST names. On a shell runner with Docker installed, drop the `services` block and the
+# DOCKER_* and WALL_DB_HOST variables.
+
+stages: [wall]
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    # Every push to dev and main keeps its own completed pipeline; a newer commit cancels only other branches'.
+    - if: $CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH == "main"
+      auto_cancel:
+        on_new_commit: none
+    - if: $CI_COMMIT_BRANCH
+
+variables:
+  GIT_DEPTH: "0" # the wall compares migrations, the OpenAPI document and the diff with the base commit
+  MISE_VERSION: v2026.9.16 # same pin as jdx/mise-action in .github/workflows/ci.yml
+  MISE_DATA_DIR: $CI_PROJECT_DIR/.mise
+  MISE_YES: "1"
+  CARGO_HOME: $CI_PROJECT_DIR/.cargo
+  RUSTUP_HOME: $CI_PROJECT_DIR/.rustup
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  WALL_DB_HOST: docker
+
+.mise:
+  image: ubuntu:24.04
+  interruptible: true
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git build-essential docker.io >/dev/null
+    - curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none --profile minimal
+    - export PATH="$CARGO_HOME/bin:$PATH"
+    - curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
+    - cd backend && mise trust && mise install && cd ..
+  cache:
+    key:
+      files: [backend/Cargo.lock, backend/mise.toml]
+    paths: [.mise, .cargo/registry, .cargo/git, backend/target]
+
+backend:
+  extends: .mise
+  stage: wall
+  timeout: 60m
+  services:
+    - name: docker:28-dind
+      alias: docker
+  script:
+    - '[ "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-}" != main ] || [ "${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-}" = dev ] || { echo "main takes merge requests from dev only"; exit 1; }'
+    - cd backend
+    - mise exec -- node scripts/wall.mjs "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$CI_COMMIT_BEFORE_SHA}"
+  artifacts:
+    name: verdicts
+    when: always
+    paths:
+      - backend/target/mutants/mutants.out
+      - backend/target/openapi
+      - backend/target/snapshots
+
+frontend:
+  image: ubuntu:24.04
+  stage: wall
+  timeout: 20m
+  interruptible: true
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git >/dev/null
+    - curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
+    - mise trust && mise install node
+  script:
+    - mise exec -- node scripts/frontend-gate.mjs

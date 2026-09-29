@@ -1,0 +1,4 @@
+[tools]
+# The project root's scripts (scripts/*.mjs) and the frontend job run on this. The backend's own tools are
+# pinned in backend/mise.toml; `cd backend && mise install` installs them, and the backend CI job runs mise there.
+node = "24.21.0"

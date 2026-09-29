@@ -1,0 +1,78 @@
+# The project wall. `backend` runs the template's scripts/wall.mjs inside backend/; `frontend` runs the frontend
+# gate. Both run on every push to dev and main and are required on main (.github/rulesets/main.json). Everything
+# fails on its own exit code; nothing is advisory. Every action is pinned to a commit SHA
+# (scripts/check-action-pins.mjs enforces it). The Rust toolchain is what backend/rust-toolchain.toml pins
+# (rustup, preinstalled on the runner); every other tool is what backend/mise.toml pins, installed by mise.
+name: ci
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A newer commit supersedes a pull request's run; every push to dev and main keeps its own completed run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('backend/rust-toolchain.toml', 'backend/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          version: 2026.9.16
+          working_directory: backend
+      - name: main takes pull requests from dev only
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: test "$HEAD_REF" = dev || { echo "::error::main takes pull requests from dev only, not from $HEAD_REF"; exit 1; }
+      - name: Actions are SHA-pinned
+        run: node scripts/check-action-pins.mjs
+      - name: Backend wall
+        working-directory: backend
+        run: node scripts/wall.mjs "${{ github.event.pull_request.base.sha || github.event.before }}"
+      - name: Required status checks match the committed job names
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-required-checks.mjs
+      - name: Keep the verdict artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verdicts
+          path: |
+            backend/target/mutants/mutants.out
+            backend/target/openapi
+            backend/target/snapshots
+          if-no-files-found: ignore
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          version: 2026.9.16
+          install_args: node
+      - name: Frontend gate
+        run: node scripts/frontend-gate.mjs

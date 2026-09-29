@@ -1,0 +1,43 @@
+# Local run: PostgreSQL 18 plus the service image. `docker compose up --build`.
+# The micro-frontend is a separate static deploy (served by the shell or a CDN, never by this service); when
+# frontend/ has a build, add a static file server here for local runs, pointed at its dist/ output.
+name: starter
+
+services:
+  postgres:
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    environment:
+      POSTGRES_DB: starter
+      POSTGRES_USER: starter
+      POSTGRES_PASSWORD: starter
+    ports:
+      - "5432:5432"
+    volumes:
+      # PostgreSQL 18 images keep data in a version-specific subdirectory; mount the parent.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U starter -d starter"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    image: starter:dev
+    environment:
+      DATABASE_URL: postgres://starter:starter@postgres:5432/starter
+    ports:
+      - "8080:8080"
+    # Pin log rotation on the stdout JSON capture so it cannot eat the disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

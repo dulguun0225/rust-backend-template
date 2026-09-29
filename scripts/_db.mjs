@@ -19,7 +19,9 @@ function reachable(host, port) {
 /** Starts a server and returns { id, url }. The container is removed when it stops. */
 export function startPostgres() {
   if (captureAll('docker', ['info']).status !== 0) throw new Fail('docker is not running: the wall needs a PostgreSQL server');
-  const id = capture('docker', ['run', '-d', '--rm', '-e', 'POSTGRES_USER=wall', '-e', 'POSTGRES_PASSWORD=wall', '-e', 'POSTGRES_DB=wall', '-p', '127.0.0.1::5432', POSTGRES_IMAGE]);
+  // Published on loopback, unless WALL_DB_HOST says the server is reached through another host (docker:dind).
+  const bind = process.env.WALL_DB_HOST ? '0.0.0.0' : '127.0.0.1';
+  const id = capture('docker', ['run', '-d', '--rm', '-e', 'POSTGRES_USER=wall', '-e', 'POSTGRES_PASSWORD=wall', '-e', 'POSTGRES_DB=wall', '-p', `${bind}::5432`, POSTGRES_IMAGE]);
   try {
     const mapped = capture('docker', ['port', id, '5432/tcp']).split('\n')[0];
     const port = Number(mapped.slice(mapped.lastIndexOf(':') + 1));

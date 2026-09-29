@@ -1,0 +1,40 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices", ":semanticCommitsDisabled"],
+  "description": "Every version here is an exact pin: `=` requirements in Cargo.toml with Cargo.lock committed, exact tools in mise.toml, digests on images and actions. This is the named path for moving a pin: a PR per update, no automerge. Renovate itself is AGPL-3.0; as a hosted app it never enters the dependency graph cargo-deny reads.",
+  "pinDigests": true,
+  "rangeStrategy": "pin",
+  "minimumReleaseAge": "14 days",
+  "ignorePaths": ["**/scripts/fixtures/**", "**/canaries/**"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The Rust toolchain in rust-toolchain.toml.",
+      "managerFilePatterns": ["/(^|/)rust-toolchain\\.toml$/"],
+      "matchStrings": ["channel = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "depNameTemplate": "rust",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "The PostgreSQL image the wall starts (scripts/_db.mjs).",
+      "managerFilePatterns": ["/(^|/)scripts/_db\\.mjs$/"],
+      "matchStrings": ["'(?<depName>postgres):(?<currentValue>[^@']+)@(?<currentDigest>sha256:[0-9a-f]{64})'"],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "The workspace rust-version follows rust-toolchain.toml; both move in one PR.",
+      "matchDepNames": ["rust"],
+      "groupName": "rust toolchain"
+    },
+    {
+      "description": "A minor move of a 0.x crate is a breaking change, and a major move of the pinned stack is a deliberate commit with a recorded source and date, not a bot PR.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["axum", "tower-http", "utoipa", "utoipa-axum", "sqlx", "sqlx-cli"],
+      "matchUpdateTypes": ["major", "minor"],
+      "enabled": false
+    }
+  ]
+}

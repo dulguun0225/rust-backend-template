@@ -53,9 +53,20 @@ function buildFiles(root) {
   });
 }
 
+/** Vendored into a project as backend/, the project root's CI, deploy and script files reach the build too. */
+function projectFiles(root) {
+  const top = captureAll('git', ['rev-parse', '--show-toplevel'], { cwd: root });
+  if (top.status !== 0) return [];
+  const here = fs.realpathSync(root);
+  const toplevel = fs.realpathSync(top.stdout.trim());
+  if (path.relative(toplevel, here) === '' || path.relative(toplevel, path.dirname(here)) !== '') return [];
+  const project = path.dirname(here);
+  return walk(project, (f) => !f.startsWith(`${path.basename(here)}/`) && (/^\.github\/workflows\//.test(f) || /^\.gitlab-ci\.yml$/.test(f) || /^compose[^/]*\.ya?ml$/.test(f) || /^mise\.toml$/.test(f) || /^scripts\/[^/]+\.mjs$/.test(f))).map((f) => path.join('..', f));
+}
+
 function scanBuildFiles(root, findings) {
   const envVar = new RegExp(`\\b(${ENV_VARS.join('|')})\\b`);
-  for (const f of buildFiles(root)) {
+  for (const f of [...buildFiles(root), ...projectFiles(root)]) {
     readText(path.join(root, f))
       .split('\n')
       .forEach((line, i) => {
