@@ -1,10 +1,15 @@
-// The committed suppression inventory (suppressions.txt), which CI diffs. Two kinds of line:
+// The committed suppression inventory (suppressions.txt), which the wall regenerates and compares. Two kinds
+// of line:
 //   config <file> [<table>] sha256:<hash>   every file that decides what a gate refuses, hashed, so an edit to
-//                                           one shows up in the inventory beside it in the same change
+//                                           one shows up in the inventory beside it in the same change: the
+//                                           configuration files, the gates' own scripts, fixtures and canaries,
+//                                           and the root Cargo.toml's [workspace], lint and profile tables
 //   suppress <file> <text>                  every allow or expect attribute (outer, inner, cfg_attr) in
 //                                           first-party Rust and every squawk-ignore comment in a migration
 // A regenerated inventory that differs from the committed one fails, printing the difference; `--write`
-// rewrites it. Suppressing a lint the workspace denies or forbids is refused outright by
+// rewrites it. It makes an edit visible in the change that makes it; it refuses none, since the same change can
+// rewrite it. Files Renovate moves (mise.toml, the Dockerfile, the workflows, [workspace.dependencies]) are not
+// hashed, so a pin update does not fail here; a digest inside a script is masked for the same reason. Suppressing a lint the workspace denies or forbids is refused outright by
 // check-lint-config.mjs; this inventory lists the rest, so each one is a visible, reviewable line.
 // Usage: node scripts/check-suppressions.mjs [--write] [--selftest]
 import crypto from 'node:crypto';
@@ -29,7 +34,13 @@ const CONFIG_FILES = [
   'table-owners.toml',
   'rules/openapi.yaml',
 ];
-const CARGO_TABLES = ['workspace.lints.rust', 'workspace.lints.clippy', 'profile.release'];
+const CARGO_TABLES = ['workspace', 'workspace.lints.rust', 'workspace.lints.clippy'];
+const GATE_FILES = (f) => /^rules\//.test(f) || /^crates\/[^/]+\/sqlx\.toml$/.test(f) || (/^scripts\//.test(f) && !/^scripts\/fixtures\//.test(f));
+// Fixture and canary trees: one line per tree, a hash over every file's path and text.
+const TREES = (f) => /^scripts\/fixtures\/[^/]+\//.test(f) || /^canaries\/[^/]+\//.test(f);
+const treeOf = (f) => f.split('/').slice(0, f.startsWith('scripts/') ? 3 : 2).join('/');
+// An image or action digest Renovate moves: masked, so a pin update does not change a script's hash.
+const unpinned = (text) => text.replace(/(['"])([^'"\s]*)@sha256:[0-9a-f]{64}\1/g, '$1$2@sha256:<digest>$1');
 const HEADER = [
   '# The suppression inventory: every file that decides what a gate refuses, hashed, and every lint or',
   '# migration-lint suppression in the tree. scripts/check-suppressions.mjs regenerates it and fails on any',
@@ -41,16 +52,20 @@ const sha = (text) => `sha256:${crypto.createHash('sha256').update(text).digest(
 
 export function inventory(root) {
   const out = [];
-  const configs = [
-    ...CONFIG_FILES,
-    ...walk(root, (f) => /^rules\/ast-grep\//.test(f) || /^crates\/[^/]+\/sqlx\.toml$/.test(f)),
-  ];
+  const configs = [...CONFIG_FILES, ...walk(root, GATE_FILES)];
   for (const f of [...new Set(configs)].sort()) {
     const full = path.join(root, f);
-    if (fs.existsSync(full)) out.push(`config ${f} ${sha(readText(full))}`);
+    if (fs.existsSync(full)) out.push(`config ${f} ${sha(unpinned(readText(full)))}`);
   }
+  const trees = new Map();
+  for (const f of walk(root, TREES)) {
+    const tree = treeOf(f);
+    trees.set(tree, `${trees.get(tree) ?? ''}${f}\0${sha(readText(path.join(root, f)))}\n`);
+  }
+  for (const [tree, listing] of [...trees].sort()) out.push(`config ${tree}/ ${sha(listing)}`);
   const cargo = readText(path.join(root, 'Cargo.toml'));
-  for (const t of CARGO_TABLES) out.push(`config Cargo.toml [${t}] ${sha(tableText(cargo, t) ?? '')}`);
+  const profiles = cargo.split('\n').map((l) => /^\[(profile\.[^\]]+)\]\s*$/.exec(l)?.[1]).filter(Boolean);
+  for (const t of [...CARGO_TABLES, ...profiles]) out.push(`config Cargo.toml [${t}] ${sha(tableText(cargo, t) ?? '')}`);
   const suppressions = [];
   for (const f of walk(root, (p) => p.endsWith('.rs') && !p.startsWith('scripts/fixtures/') && !p.startsWith('canaries/'))) {
     for (const attr of attributes(tokens(readText(path.join(root, f))))) {
@@ -104,11 +119,23 @@ function selftest() {
     write(dir);
     fs.writeFileSync(path.join(dir, 'Cargo.toml'), '[workspace.lints.clippy]\nunwrap_used = "allow"\n');
     if (!inventoryDiff(dir).some((l) => l.startsWith('+ config Cargo.toml [workspace.lints.clippy]'))) problems.push('an edited lint table was not reported');
+    write(dir);
+    fs.mkdirSync(path.join(dir, 'scripts', 'fixtures', 'sql'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'scripts', 'wall.mjs'), "const COVERAGE = { lines: 85 };\nconst IMAGE = 'postgres:18@sha256:" + '0'.repeat(64) + "';\n");
+    fs.writeFileSync(path.join(dir, 'scripts', 'fixtures', 'sql', 'case.rs'), 'x\n');
+    fs.writeFileSync(path.join(dir, 'Cargo.toml'), '[workspace.lints.clippy]\nunwrap_used = "allow"\n\n[profile.release.package.a]\nopt-level = 1\n');
+    const added = inventoryDiff(dir);
+    for (const want of ['+ config scripts/wall.mjs', '+ config scripts/fixtures/sql/', '+ config Cargo.toml [profile.release.package.a]']) {
+      if (!added.some((l) => l.startsWith(want))) problems.push(`${want.slice(9)} was not reported`);
+    }
+    write(dir);
+    fs.writeFileSync(path.join(dir, 'scripts', 'wall.mjs'), "const COVERAGE = { lines: 85 };\nconst IMAGE = 'postgres:18@sha256:" + '1'.repeat(64) + "';\n");
+    if (inventoryDiff(dir).length !== 0) problems.push('a moved image digest in a script was reported');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
   report(problems, 'suppression selftest case(s) failed');
-  console.log('suppression selftest: a new suppression, an edited clippy.toml and an edited lint table are each reported');
+  console.log('suppression selftest: a new suppression, an edited clippy.toml, lint table, profile table, script and fixture tree are each reported; a moved digest is not');
 }
 
 main(() => {
