@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select 'NaN'::numeric as \"v!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "v!",
+        "type_info": "Numeric",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ef89cd02289d98dbd5682b2b786290d356f669276a8a49ca2cf8f1825ddc05e2"
+}

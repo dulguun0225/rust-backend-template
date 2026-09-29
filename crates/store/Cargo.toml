@@ -1,0 +1,22 @@
+[package]
+name = "store"
+description = "Feature SQL: one module per feature, every statement a checked query macro, each module writing only the tables table-owners.toml gives it."
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+db.workspace = true
+money-sql.workspace = true
+platform.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+time.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

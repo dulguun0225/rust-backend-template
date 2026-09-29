@@ -1,0 +1,117 @@
+# One workspace, one crate per layer. Crate boundaries carry the layering: a crate cannot use a crate it
+# does not declare, and scripts/check-layering.mjs holds every declared edge to layering.toml.
+#
+# Every version is an exact pin (`=`), Cargo.lock is committed, and every build runs with --locked.
+# Features are declared here and nowhere else, so every crate, and the ban canaries that
+# scripts/check-ban-canaries.mjs generates from this file, resolve the same feature set.
+[workspace]
+resolver = "3"
+members = [
+    "crates/platform",
+    "crates/money",
+    "crates/money-sql",
+    "crates/db",
+    "crates/store",
+    "crates/web",
+    "crates/api",
+    "crates/server",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.98.1"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+# First-party crates, by path.
+platform = { path = "crates/platform" }
+money = { path = "crates/money" }
+money-sql = { path = "crates/money-sql" }
+db = { path = "crates/db" }
+store = { path = "crates/store" }
+web = { path = "crates/web" }
+api = { path = "crates/api" }
+
+# Runtime and HTTP.
+tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio", "matched-path", "original-uri", "query"] }
+tower = { version = "=0.5.3", features = ["util"] }
+tower-http = { version = "=0.7.1", features = ["catch-panic", "limit"] }
+http-body-util = "=0.1.5"
+
+# API contract.
+utoipa = { version = "=6.0.0", features = ["time", "uuid"] }
+utoipa-axum = "=0.3.0"
+
+# SQL. Checked macros only; the sqlx-toml feature carries crates/store/sqlx.toml's NUMERIC override.
+sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "macros", "migrate", "uuid", "time", "bigdecimal", "sqlx-toml"] }
+bigdecimal = "=0.4.11"
+
+# Data.
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+serde_path_to_error = "=0.1.20"
+uuid = { version = "=1.26.1", features = ["v7", "serde"] }
+time = { version = "=0.3.55", features = ["serde", "formatting", "parsing"] }
+base64 = "=0.23.1"
+
+# Errors: thiserror in every library crate; anyhow only in the server binary (layering.toml, clippy.toml).
+thiserror = "=2.0.21"
+anyhow = "=1.0.104"
+
+# Observability.
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["fmt", "json", "std", "registry"] }
+
+# Tests.
+proptest = "=1.11.0"
+jsonschema = { version = "=0.58.2", default-features = false }
+
+[workspace.lints.rust]
+# Every warning is an error; `priority = -1` so the entries below override the group, as Cargo requires.
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "forbid"
+unused_must_use = "forbid"
+
+[workspace.lints.clippy]
+# forbid: `#[allow]`, `#![allow]` and `#[expect]` on the lint are E0453. Only lints no dependency macro in
+# the stack allows are here; the ban canaries (canaries/bans) compile every macro beside them.
+unwrap_used = "forbid"
+panic = "forbid"
+todo = "forbid"
+unimplemented = "forbid"
+indexing_slicing = "forbid"
+arithmetic_side_effects = "forbid"
+integer_division = "forbid"
+integer_division_remainder_used = "forbid"
+as_conversions = "forbid"
+cast_possible_truncation = "forbid"
+cast_sign_loss = "forbid"
+cast_precision_loss = "forbid"
+cast_possible_wrap = "forbid"
+float_arithmetic = "forbid"
+float_cmp = "forbid"
+let_underscore_must_use = "forbid"
+wildcard_enum_match_arm = "forbid"
+match_wildcard_for_single_variants = "forbid"
+allow_attributes = "forbid"
+dbg_macro = "forbid"
+print_stdout = "forbid"
+print_stderr = "forbid"
+mem_forget = "forbid"
+# deny: sqlx's query macros emit #[allow(clippy::all)] and #[allow(clippy::unreachable)], #[tokio::main]
+# emits #[allow(clippy::expect_used)], so forbid would be E0453 on their expansions. A first-party
+# allow or expect naming any lint in this table fails scripts/check-lint-config.mjs instead.
+expect_used = "deny"
+unreachable = "deny"
+await_holding_lock = "deny"
+await_holding_invalid_type = "deny"
+disallowed_methods = "deny"
+disallowed_types = "deny"
+disallowed_macros = "deny"
+
+[profile.release]
+# Integer overflow panics in release as in debug; without it `.sum()` over i64 wraps silently.
+overflow-checks = true
+# panic stays "unwind" (the default): tower-http's CatchPanicLayer does nothing under "abort".

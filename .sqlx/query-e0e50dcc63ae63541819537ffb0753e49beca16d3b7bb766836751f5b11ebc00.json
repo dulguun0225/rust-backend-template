@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into greeting (id, name, created_at, version) values ($1, 'x', $2, 1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e0e50dcc63ae63541819537ffb0753e49beca16d3b7bb766836751f5b11ebc00"
+}

@@ -1,0 +1,27 @@
+[package]
+name = "web"
+description = "The HTTP platform: RFC 9457 problems, the strict request-body reader, correlation, and the edge every response passes."
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+axum.workspace = true
+http-body-util.workspace = true
+platform.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_path_to_error.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+utoipa.workspace = true
+utoipa-axum.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
+
+[lints]
+workspace = true

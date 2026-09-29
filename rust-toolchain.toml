@@ -1,0 +1,6 @@
+# The exact toolchain. rustup reads this file and installs the toolchain when it is missing; every cargo
+# command in scripts/ runs under it. A channel name such as "stable" is refused by scripts/check-lint-config.mjs.
+[toolchain]
+channel = "1.98.1"
+components = ["clippy", "rustfmt", "llvm-tools"]
+profile = "minimal"

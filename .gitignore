@@ -1,0 +1,7 @@
+target/
+mutants.out/
+mutants.out.old/
+.idea/
+.vscode/
+.DS_Store
+.env

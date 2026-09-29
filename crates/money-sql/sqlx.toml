@@ -1,0 +1,4 @@
+# sqlx's query macros read this file (the sqlx-toml feature). Every NUMERIC column and parameter decodes and
+# encodes as DbAmount, so no query here can hand a bigdecimal::BigDecimal to the caller.
+[macros.type-overrides]
+'NUMERIC' = "money_sql::DbAmount"

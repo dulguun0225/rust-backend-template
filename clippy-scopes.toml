@@ -1,0 +1,53 @@
+# Which crates may use which banned paths. clippy reads the nearest clippy.toml and a crate-local file
+# replaces the root one rather than merging with it, so each crate-local crates/<crate>/clippy.toml is
+# generated from the root clippy.toml minus the entries named here: `node scripts/clippy-scopes.mjs --write`.
+# scripts/check-lint-config.mjs fails when a crate-local file differs from what this file declares, when a
+# crate carries one this file does not declare, or when an exemption names no root entry.
+
+[platform]
+reason = "the one clock read (clock::SystemClock), the one id producer (ids::new_id) and the logging facade (log)"
+exempt = [
+  "time::OffsetDateTime::now_utc",
+  "uuid::Uuid::now_v7",
+  # tracing's level macros expand to tracing::event! and tracing::info_span! to tracing::span!, and
+  # clippy checks every macro in the expansion chain, so the inner two are exempt as well.
+  "tracing::debug",
+  "tracing::info",
+  "tracing::error",
+  "tracing::event",
+  "tracing::info_span",
+  "tracing::span",
+]
+
+[money]
+reason = "mul_div_round, the one place money division is written"
+exempt = [
+  "i128::checked_div",
+  "i128::checked_rem",
+]
+
+[money-sql]
+reason = "DbAmount, the one NUMERIC <-> minor-units mapper (money-storage M-37)"
+exempt = [
+  "bigdecimal::BigDecimal",
+]
+
+[db]
+reason = "Tx, the one transaction seam"
+exempt = [
+  "sqlx::Pool::begin_with",
+]
+
+[web]
+reason = "StrictJson, the one request-body reader"
+exempt = [
+  "serde_json::from_slice",
+  "axum::body::to_bytes",
+]
+
+[server]
+reason = "the binary's startup: anyhow at the edge, as the stack decision allows"
+exempt = [
+  "anyhow::Result",
+  "anyhow::Context::context",
+]

@@ -1,0 +1,12 @@
+# squawk: the PostgreSQL migration linter, run over the migrations a change adds or edits and gated on exit
+# code (scripts/squawk-changed-migrations.mjs). The default rule set stays on: it carries the lock and rewrite
+# hazards (a non-concurrent index build, a table-rewriting type change, NOT NULL without a default, a
+# constraint added without NOT VALID). There is no opt-out in a migration: scripts/check-migrations.mjs fails
+# on any `squawk-ignore` comment, so a rule is turned off here, for every file, in a commit that says why.
+pg_version = "18.0"
+
+excluded_rules = [
+  # Surrogate keys here are `uuid default uuidv7()`; identity columns are a sequence in disguise, which the
+  # primary-keys skill bans. squawk's preference for identity is the opposite convention.
+  "prefer-identity",
+]

@@ -1,0 +1,4 @@
+# rustfmt, run by the wall as `cargo fmt --all --check`; `cargo fmt --all` formats. The style edition
+# follows the crate edition (2024).
+max_width = 120
+use_small_heuristics = "Max"

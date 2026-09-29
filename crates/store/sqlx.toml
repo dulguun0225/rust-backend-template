@@ -1,0 +1,8 @@
+# sqlx's query macros read this file (the sqlx-toml feature). Every NUMERIC column and parameter decodes and
+# encodes as money_sql::DbAmount, the one NUMERIC <-> minor-units mapper, so no query here can hand a
+# bigdecimal::BigDecimal to the caller. Timestamps are the `time` crate's.
+[macros.preferred-crates]
+date-time = "time"
+
+[macros.type-overrides]
+'NUMERIC' = "money_sql::DbAmount"

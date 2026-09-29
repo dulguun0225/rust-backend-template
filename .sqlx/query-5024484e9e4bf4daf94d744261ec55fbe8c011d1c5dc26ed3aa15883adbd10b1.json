@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select 12.345::numeric(19,4) as \"v!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "v!",
+        "type_info": "Numeric",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5024484e9e4bf4daf94d744261ec55fbe8c011d1c5dc26ed3aa15883adbd10b1"
+}

@@ -1,0 +1,5 @@
+target/
+mutants.out/
+mutants.out.old/
+.git/
+project-root/
