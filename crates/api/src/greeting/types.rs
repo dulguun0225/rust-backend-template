@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// The longest name, in characters; the migration's check constraint says the same.
-pub const NAME_MAX_CHARS: usize = 100;
+pub const NAME_MAX_CHARS: u16 = 100;
 
 /// Creates one greeting. Only the fields this operation writes; the id is assigned by the service.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

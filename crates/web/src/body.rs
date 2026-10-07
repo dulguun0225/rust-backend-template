@@ -6,8 +6,10 @@
 //! - a member `T` does not declare: `validation.unknown-field`;
 //! - a member named after one of the matched route's path variables, whatever its value:
 //!   `validation.identifier-in-path` (an identifier travels in the path only);
-//! - a member whose JSON type is not the declared one: `validation.wrong-type`, `detail` `expected <type>`;
-//! - a member that appears twice: `validation.duplicate-member`;
+//! - a member whose JSON type is not the declared one: `validation.wrong-type`, param `expected` and `detail`
+//!   `expected <type>`;
+//! - a member that appears twice in one object, at any depth: `validation.duplicate-member` at the pointer of
+//!   the repeated member, so no value is ever picked from two;
 //! - a required member that is absent: `validation.required`.
 //!
 //! The declared members, their JSON types and the required list are read from `T`'s generated schema — the
@@ -26,7 +28,7 @@ use std::fmt;
 use axum::extract::{FromRequest, MatchedPath, Request};
 use axum::http::header;
 use serde::Deserialize;
-use serde::de::{DeserializeOwned, Deserializer, MapAccess, Visitor};
+use serde::de::{DeserializeOwned, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Value};
 use utoipa::PartialSchema;
 
@@ -105,10 +107,8 @@ where
 /// Binds the members against `T`'s schema. Public for the reader's own tests and for a test sweeping every
 /// request type; handlers never call it.
 #[must_use]
-pub fn bind<T: DeserializeOwned + PartialSchema>(
-    members: Vec<(String, Value)>,
-    path_variables: &BTreeSet<String>,
-) -> Bound<T> {
+pub fn bind<T: DeserializeOwned + PartialSchema>(members: Members, path_variables: &BTreeSet<String>) -> Bound<T> {
+    let Members { members, nested_duplicates } = members;
     let schema = serde_json::to_value(T::schema()).unwrap_or(Value::Null);
     let properties = schema.get("properties").and_then(Value::as_object).cloned().unwrap_or_default();
     let required: BTreeSet<String> = schema
@@ -117,7 +117,8 @@ pub fn bind<T: DeserializeOwned + PartialSchema>(
         .map(|r| r.iter().filter_map(Value::as_str).map(str::to_owned).collect())
         .unwrap_or_default();
 
-    let mut failures = Vec::new();
+    let mut failures: Vec<FieldError> =
+        nested_duplicates.into_iter().map(|at| FieldError::new(at, ApiFieldCode::DuplicateMember)).collect();
     let mut accepted = Map::new();
     let mut seen = BTreeSet::new();
     for (name, value) in members {
@@ -136,7 +137,8 @@ pub fn bind<T: DeserializeOwned + PartialSchema>(
             continue;
         };
         match type_mismatch(declared, &value) {
-            Some(expected) => failures.push(FieldError::new(at, ApiFieldCode::WrongType).with_detail(expected)),
+            Some(expected) => failures
+                .push(FieldError::new(at, ApiFieldCode::WrongType { expected }).with_detail(expected_detail(expected))),
             None => {
                 accepted.insert(name, value);
             }
@@ -200,8 +202,15 @@ fn type_mismatch(declared: &Value, value: &Value) -> Option<&'static str> {
     if fits {
         return None;
     }
-    types.iter().find(|t| **t != "null").map(|t| expected_detail(t))
+    types
+        .iter()
+        .find(|t| **t != "null")
+        .map(|t| JSON_TYPES.into_iter().find(|name| name == t).unwrap_or("another type"))
 }
+
+/// The JSON types a request member is declared as, null aside: a member is a scalar
+/// (crates/api/tests/api/openapi.rs), so no other type is ever expected.
+const JSON_TYPES: [&str; 4] = ["string", "boolean", "integer", "number"];
 
 fn expected_detail(json_type: &str) -> &'static str {
     match json_type {
@@ -209,18 +218,26 @@ fn expected_detail(json_type: &str) -> &'static str {
         "boolean" => "expected boolean",
         "integer" => "expected integer",
         "number" => "expected number",
-        // A request member is a scalar (crates/api/tests/api/openapi.rs), so no other type is ever expected.
         _ => "expected another type",
     }
 }
 
-/// The body's top-level members, in order, duplicates kept.
+/// A body's top-level members, in order, duplicates kept, and the pointer of every member repeated inside a
+/// member's value. `serde_json::Value` keeps one value of a repeated member silently, so the reader records the
+/// repetition while it reads, before any value is built.
+#[derive(Debug)]
+pub struct Members {
+    members: Vec<(String, Value)>,
+    nested_duplicates: BTreeSet<String>,
+}
+
+/// The body's members.
 ///
 /// # Errors
 /// `validation.malformed-body` naming where the JSON stopped being well formed, or that it is not an object.
-pub fn read_members(bytes: &[u8]) -> Result<Vec<(String, Value)>, ApiError> {
+pub fn read_members(bytes: &[u8]) -> Result<Members, ApiError> {
     match serde_json::from_slice::<Members>(bytes) {
-        Ok(Members(members)) => Ok(members),
+        Ok(members) => Ok(members),
         Err(e) if e.classify() == serde_json::error::Category::Data => {
             Err(ApiError::Malformed("the body is not a JSON object".to_owned()))
         }
@@ -231,8 +248,6 @@ pub fn read_members(bytes: &[u8]) -> Result<Vec<(String, Value)>, ApiError> {
         ))),
     }
 }
-
-struct Members(Vec<(String, Value)>);
 
 impl<'de> Deserialize<'de> for Members {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -247,14 +262,92 @@ impl<'de> Deserialize<'de> for Members {
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Members, A::Error> {
                 let mut members = Vec::new();
-                while let Some(entry) = map.next_entry::<String, Value>()? {
-                    members.push(entry);
+                let mut nested_duplicates = BTreeSet::new();
+                while let Some(name) = map.next_key::<String>()? {
+                    let Read(value) =
+                        map.next_value_seed(Tracked { at: pointer(&name), duplicates: &mut nested_duplicates })?;
+                    members.push((name, value));
                 }
-                Ok(Members(members))
+                Ok(Members { members, nested_duplicates })
             }
         }
 
         deserializer.deserialize_map(ObjectMembers)
+    }
+}
+
+/// Reads one JSON value at pointer `at`, recording the pointer of each member its objects repeat. Depth is
+/// bounded by `serde_json`'s recursion limit, which it checks before every array and object.
+struct Tracked<'a> {
+    at: String,
+    duplicates: &'a mut BTreeSet<String>,
+}
+
+/// A value [`Tracked`] read. It has no default, so no read can stand in for null by defaulting.
+#[derive(Debug)]
+struct Read(Value);
+
+impl<'de> DeserializeSeed<'de> for Tracked<'_> {
+    type Value = Read;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Read, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> Visitor<'de> for Tracked<'_> {
+    type Value = Read;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a JSON value")
+    }
+
+    fn visit_bool<E>(self, v: bool) -> Result<Read, E> {
+        Ok(Read(Value::Bool(v)))
+    }
+
+    fn visit_i64<E>(self, v: i64) -> Result<Read, E> {
+        Ok(Read(Value::from(v)))
+    }
+
+    fn visit_u64<E>(self, v: u64) -> Result<Read, E> {
+        Ok(Read(Value::from(v)))
+    }
+
+    fn visit_f64<E>(self, v: f64) -> Result<Read, E> {
+        Ok(Read(Value::from(v)))
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Read, E> {
+        Ok(Read(Value::from(v)))
+    }
+
+    fn visit_unit<E>(self) -> Result<Read, E> {
+        Ok(Read(Value::Null))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Read, A::Error> {
+        let mut items = Vec::new();
+        while let Some(Read(item)) =
+            seq.next_element_seed(Tracked { at: format!("{}/{}", self.at, items.len()), duplicates: self.duplicates })?
+        {
+            items.push(item);
+        }
+        Ok(Read(Value::Array(items)))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Read, A::Error> {
+        let mut object = Map::new();
+        while let Some(name) = map.next_key::<String>()? {
+            let at = format!("{}{}", self.at, pointer(&name));
+            let Read(value) = map.next_value_seed(Tracked { at: at.clone(), duplicates: self.duplicates })?;
+            if object.contains_key(&name) {
+                self.duplicates.insert(at);
+            } else {
+                object.insert(name, value);
+            }
+        }
+        Ok(Read(Value::Object(object)))
     }
 }
 
@@ -285,7 +378,7 @@ fn is_length_limit(error: &axum::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Bound, bind, read_members, template_variables};
+    use super::{Bound, Tracked, bind, read_members, template_variables};
     use crate::codes::ApiFieldCode;
     use crate::problem::{ApiError, FieldError};
     use serde::{Deserialize, Serialize};
@@ -371,6 +464,60 @@ mod tests {
         let bad_id = r#"{"givenName":"a","count":1,"ratio":1,"active":true,"id":"not-a-uuid","nickname":null}"#;
         let got = entries(bound(bad_id, &[]).validate(|_, _| Some(())));
         assert_eq!(got, [("/id".into(), "validation.invalid-value".into(), None)]);
+    }
+
+    #[test]
+    fn a_duplicate_member_at_any_depth_is_refused_where_it_is() {
+        let body = r#"{"givenName":{"a":1,"b":[{"c":1,"c":2},{"d":1,"d":2}],"a":2},"count":1,"ratio":1,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","nickname":null,"nickname":null}"#;
+        let got = entries(bound(body, &[]).validate(|_, _| Some(())));
+        assert_eq!(
+            got,
+            [
+                ("/givenName".into(), "validation.wrong-type".into(), Some("expected string".into())),
+                ("/givenName/a".into(), "validation.duplicate-member".into(), None),
+                ("/givenName/b/0/c".into(), "validation.duplicate-member".into(), None),
+                ("/givenName/b/1/d".into(), "validation.duplicate-member".into(), None),
+                ("/nickname".into(), "validation.duplicate-member".into(), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_reader_keeps_every_value_as_sent() {
+        let body =
+            r#"{"a":[null,true,false,-7,18446744073709551615,0.25,"s\u00e9",{"b":{"c":[]}}],"d":{},"e":"plain"}"#;
+        let members = read_members(body.as_bytes()).unwrap();
+        let expected: serde_json::Value = body.parse().unwrap();
+        let expected: Vec<_> = expected.as_object().unwrap().clone().into_iter().collect();
+        assert_eq!(members.members, expected);
+        assert!(members.nested_duplicates.is_empty());
+    }
+
+    #[test]
+    fn the_value_reader_names_what_it_expects() {
+        use serde::de::DeserializeSeed;
+        let mut duplicates = BTreeSet::new();
+        let refused = Tracked { at: "/a".to_owned(), duplicates: &mut duplicates }
+            .deserialize(serde::de::value::BytesDeserializer::<serde::de::value::Error>::new(b"x"))
+            .unwrap_err();
+        assert_eq!(refused.to_string(), "invalid type: byte array, expected a JSON value");
+    }
+
+    #[test]
+    fn a_field_error_carries_its_code_params_by_name() {
+        let wrong = serde_json::to_value(
+            FieldError::new("/a", ApiFieldCode::WrongType { expected: "string" }).with_detail("expected string"),
+        )
+        .unwrap();
+        assert_eq!(
+            wrong,
+            serde_json::json!({
+                "pointer": "/a", "code": "validation.wrong-type", "detail": "expected string",
+                "params": { "expected": "string" },
+            })
+        );
+        let bare = serde_json::to_value(FieldError::new("/a", ApiFieldCode::Required)).unwrap();
+        assert_eq!(bare, serde_json::json!({ "pointer": "/a", "code": "validation.required" }));
     }
 
     #[test]

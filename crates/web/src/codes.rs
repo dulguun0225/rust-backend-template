@@ -32,13 +32,16 @@ platform::field_codes! {
         /// A top-level member named after one of the route's path variables: an identifier travels in the
         /// path only, so the body never carries it, whatever its value.
         IdentifierInPath = "validation.identifier-in-path",
-        /// A member whose JSON type is not the declared one; `detail` names the expected type.
-        WrongType = "validation.wrong-type",
+        /// A member whose JSON type is not the declared one; `detail` says the same in words.
+        WrongType {
+            /// The declared JSON type: `string`, `boolean`, `integer` or `number`.
+            expected: &'static str,
+        } = "validation.wrong-type",
         /// A member of the right JSON type holding a value the type refuses, such as a malformed UUID.
         InvalidValue = "validation.invalid-value",
         /// A required member is absent.
         Required = "validation.required",
-        /// A member appears twice in one object.
+        /// A member appears twice in one object, at any depth; the pointer names the repeated member.
         DuplicateMember = "validation.duplicate-member",
     }
 }

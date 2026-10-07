@@ -29,6 +29,27 @@
               "null"
             ]
           },
+          "params": {
+            "additionalProperties": {
+              "description": "One param of a field error: a JSON integer or a JSON string.",
+              "oneOf": [
+                {
+                  "description": "An integer, such as a maximum length.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                {
+                  "description": "A string fixed in the source, such as an expected JSON type.",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "What is allowed, by name, e.g. `{\"max\": 100}` on validation.too-long: exactly the params the code\ndeclares in the error catalog, absent when it declares none. Never the value sent.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "pointer": {
             "description": "RFC 6901 JSON pointer to the member, e.g. /name.",
             "type": "string"

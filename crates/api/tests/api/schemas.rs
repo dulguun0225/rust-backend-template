@@ -7,10 +7,11 @@
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 
-use api::greeting::{CreateGreetingRequest, GreetingView};
+use api::greeting::{CreateGreetingRequest, GreetingFieldCode, GreetingView};
 use serde::Serialize;
 use serde_json::{Value, json};
 use time::macros::datetime;
+use web::codes::ApiFieldCode;
 use web::problem::{FieldError, Problem};
 
 struct Sample {
@@ -52,18 +53,13 @@ fn samples() -> Vec<Sample> {
             status: 400,
             code: "validation.failed".to_owned(),
             detail: Some("detail".to_owned()),
-            errors: Some(vec![FieldError {
-                pointer: "/name".to_owned(),
-                code: "validation.required".to_owned(),
-                detail: None,
-            }]),
+            errors: Some(vec![
+                FieldError::new("/name", GreetingFieldCode::Required),
+                FieldError::new("/name", GreetingFieldCode::TooLong { max: 100 }),
+            ]),
             incident_id: Some(platform::ids::new_id().to_string()),
         }),
-        response(&FieldError {
-            pointer: "/a".to_owned(),
-            code: "validation.wrong-type".to_owned(),
-            detail: Some("expected string".to_owned()),
-        }),
+        response(&FieldError::new("/a", ApiFieldCode::WrongType { expected: "string" }).with_detail("expected string")),
     ]
 }
 

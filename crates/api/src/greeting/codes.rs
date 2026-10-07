@@ -13,7 +13,10 @@ platform::field_codes! {
     pub enum GreetingFieldCode {
         /// The name is empty or only whitespace.
         Required = "validation.required",
-        /// The name is longer than `NAME_MAX_CHARS` characters.
-        TooLong = "validation.too-long",
+        /// The name is longer than `max` characters.
+        TooLong {
+            /// The most characters a name may have: `NAME_MAX_CHARS`.
+            max: u16,
+        } = "validation.too-long",
     }
 }

@@ -1,6 +1,7 @@
 //! The worked example end to end against a real PostgreSQL.
 
 use axum::http::Method;
+use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use crate::common::{app, capture_log, empty_request, json_request, send};
@@ -38,28 +39,46 @@ async fn an_unknown_id_is_not_found(pool: PgPool) {
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn every_refusal_is_one_validation_failed_and_opens_no_transaction(pool: PgPool) {
     let app = app(pool);
-    let long = "x".repeat(api::greeting::NAME_MAX_CHARS + 1);
+    let long = "x".repeat(usize::from(api::greeting::NAME_MAX_CHARS) + 1);
+    let required = json!({ "pointer": "/name", "code": "validation.required" });
     let cases = [
-        (r#"{"name":"   "}"#.to_owned(), vec![("/name", "validation.required")]),
-        (format!(r#"{{"name":"{long}"}}"#), vec![("/name", "validation.too-long")]),
-        ("{}".to_owned(), vec![("/name", "validation.required")]),
+        (r#"{"name":"   "}"#.to_owned(), vec![required.clone()]),
+        (
+            format!(r#"{{"name":"{long}"}}"#),
+            vec![json!({ "pointer": "/name", "code": "validation.too-long", "params": { "max": 100 } })],
+        ),
+        ("{}".to_owned(), vec![required.clone()]),
         (
             r#"{"name":"   ","nickname":"x"}"#.to_owned(),
-            vec![("/nickname", "validation.unknown-field"), ("/name", "validation.required")],
+            vec![json!({ "pointer": "/nickname", "code": "validation.unknown-field" }), required],
         ),
-        (r#"{"name":true}"#.to_owned(), vec![("/name", "validation.wrong-type")]),
+        (
+            r#"{"name":true}"#.to_owned(),
+            vec![json!({
+                "pointer": "/name", "code": "validation.wrong-type",
+                "detail": "expected string", "params": { "expected": "string" },
+            })],
+        ),
+        (
+            r#"{"name":"Ada","name":"Bob"}"#.to_owned(),
+            vec![json!({ "pointer": "/name", "code": "validation.duplicate-member" })],
+        ),
+        (
+            r#"{"name":{"first":"Ada","first":"Bob"}}"#.to_owned(),
+            vec![
+                json!({
+                    "pointer": "/name", "code": "validation.wrong-type",
+                    "detail": "expected string", "params": { "expected": "string" },
+                }),
+                json!({ "pointer": "/name/first", "code": "validation.duplicate-member" }),
+            ],
+        ),
     ];
     for (body, expected) in cases {
         let reply = send(&app.router, json_request(Method::POST, "/api/greetings", &body)).await;
         assert_eq!(reply.status, 400, "{body}");
         assert_eq!(reply.json["code"], "validation.failed", "{body}");
-        let got: Vec<(&str, &str)> = reply.json["errors"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|e| (e["pointer"].as_str().unwrap(), e["code"].as_str().unwrap()))
-            .collect();
-        assert_eq!(got, expected, "{body}");
+        assert_eq!(reply.json["errors"], Value::Array(expected), "{body}");
     }
     assert_eq!(app.tx.begun(), 0);
 }
@@ -67,7 +86,7 @@ async fn every_refusal_is_one_validation_failed_and_opens_no_transaction(pool: P
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn a_name_of_exactly_the_maximum_length_is_accepted(pool: PgPool) {
     let app = app(pool);
-    let name = "x".repeat(api::greeting::NAME_MAX_CHARS);
+    let name = "x".repeat(usize::from(api::greeting::NAME_MAX_CHARS));
     let reply =
         send(&app.router, json_request(Method::POST, "/api/greetings", &format!(r#"{{"name":"{name}"}}"#))).await;
     assert_eq!(reply.status, 201, "{}", reply.text);

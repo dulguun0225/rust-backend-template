@@ -70,8 +70,8 @@ fn valid_name(request: &CreateGreetingRequest, errors: &mut Vec<FieldError>) -> 
         errors.push(FieldError::new("/name", GreetingFieldCode::Required));
         return None;
     }
-    if name.chars().count() > NAME_MAX_CHARS {
-        errors.push(FieldError::new("/name", GreetingFieldCode::TooLong));
+    if name.chars().count() > usize::from(NAME_MAX_CHARS) {
+        errors.push(FieldError::new("/name", GreetingFieldCode::TooLong { max: NAME_MAX_CHARS }));
         return None;
     }
     Some(name.to_owned())

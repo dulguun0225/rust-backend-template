@@ -2,9 +2,11 @@
 //! Handlers return [`ApiError`]; the edge ([`crate::edge`]) turns every other error response into a problem
 //! too, so no response of status 400 or above leaves the service without a code.
 
+use std::collections::BTreeMap;
+
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use platform::catalog::{FieldCode, WireError};
+use platform::catalog::{FieldCode, ParamValue, WireError};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -38,23 +40,50 @@ pub struct Problem {
     pub incident_id: Option<String>,
 }
 
+// Built only by `FieldError::new`, from a catalog code carrying its declared params: the fields are private
+// to this crate, so no other crate writes a code or a param list by hand.
 /// One entry of a validation.failed problem.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, ToSchema)]
 pub struct FieldError {
     /// RFC 6901 JSON pointer to the member, e.g. /name.
-    pub pointer: String,
+    pub(crate) pointer: String,
     /// A field code, e.g. validation.required.
-    pub code: String,
+    pub(crate) code: String,
     /// Caller-safe text naming what was expected, e.g. `expected boolean`; never the value sent.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
+    pub(crate) detail: Option<String>,
+    /// What is allowed, by name, e.g. `{"max": 100}` on validation.too-long: exactly the params the code
+    /// declares in the error catalog, absent when it declares none. Never the value sent.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[schema(inline)]
+    pub(crate) params: BTreeMap<String, FieldParam>,
+}
+
+/// One param of a field error: a JSON integer or a JSON string.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, ToSchema)]
+#[serde(untagged)]
+pub enum FieldParam {
+    /// An integer, such as a maximum length.
+    Integer(i64),
+    /// A string fixed in the source, such as an expected JSON type.
+    Text(String),
+}
+
+impl From<ParamValue> for FieldParam {
+    fn from(value: ParamValue) -> Self {
+        match value {
+            ParamValue::Integer(n) => Self::Integer(n),
+            ParamValue::Text(t) => Self::Text(t.to_owned()),
+        }
+    }
 }
 
 impl FieldError {
-    /// An entry at `pointer` (already an RFC 6901 pointer) with a catalog code.
+    /// An entry at `pointer` (already an RFC 6901 pointer) with a catalog code and the params it carries.
     #[must_use]
     pub fn new(pointer: impl Into<String>, code: impl FieldCode) -> Self {
-        Self { pointer: pointer.into(), code: code.wire().to_owned(), detail: None }
+        let params = code.params().into_iter().map(|(name, value)| (name.to_owned(), value.into())).collect();
+        Self { pointer: pointer.into(), code: code.wire().to_owned(), detail: None, params }
     }
 
     /// The same entry with a static detail: the detail is never built from the value sent.

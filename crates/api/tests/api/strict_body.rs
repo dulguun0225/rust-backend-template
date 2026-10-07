@@ -1,6 +1,7 @@
 //! The strict-body sweep: every operation the document declares a request body for, discovered from the
 //! document of exactly what is served, refuses an undeclared member, each path variable sent in the body, each
-//! member sent as the wrong JSON type, broken JSON and a missing body — each a 400 that opens no transaction
+//! member sent as the wrong JSON type, each member sent twice, each member sent as an object that repeats a
+//! member of its own, broken JSON and a missing body — each a 400 that opens no transaction
 //! and puts no sentinel value in any response or log line. The test-only `/test/probes/{probeId}` keeps the
 //! path-variable case non-vacuous; the test-only `/test/lenient` reads its body leniently and is the negative
 //! control: the sweep must report it, and only it.
@@ -79,11 +80,33 @@ async fn sweep(app: &TestApp, operation: &Operation) -> Vec<String> {
             entry: Some((format!("/{variable}"), "validation.identifier-in-path")),
         });
     }
+    // `{"member":<first>,<first again, when given,><every other member>}`: a Value cannot hold a repetition.
+    let raw = |name: &str, first: &str, again: Option<&str>| {
+        let mut others = operation.members.clone();
+        others.remove(name);
+        let key = Value::from(name);
+        let again = again.map(|value| format!(",{key}:{value}")).unwrap_or_default();
+        let rest = Value::Object(others).to_string();
+        let rest = rest.strip_prefix('{').unwrap().strip_suffix('}').unwrap();
+        let rest = if rest.is_empty() { String::new() } else { format!(",{rest}") };
+        format!("{{{key}:{first}{again}{rest}}}")
+    };
     for member in operation.members.keys() {
         cases.push(Case {
             label: format!("member {member} as an array"),
             body: with(member, Value::Array(vec![Value::from(SENTINEL)])),
             entry: Some((format!("/{member}"), "validation.wrong-type")),
+        });
+        let valid = operation.members[member].to_string();
+        cases.push(Case {
+            label: format!("member {member} twice"),
+            body: raw(member, &valid, Some(&Value::from(SENTINEL).to_string())),
+            entry: Some((format!("/{member}"), "validation.duplicate-member")),
+        });
+        cases.push(Case {
+            label: format!("member {member} as an object repeating a member"),
+            body: raw(member, &format!(r#"{{"repeated":"{SENTINEL}","repeated":"{SENTINEL}"}}"#), None),
+            entry: Some((format!("/{member}/repeated"), "validation.duplicate-member")),
         });
     }
     cases.push(Case { label: "broken JSON".to_owned(), body: format!(r#"{{"{SENTINEL}":"#), entry: None });
