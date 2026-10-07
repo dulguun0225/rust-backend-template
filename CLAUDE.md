@@ -32,6 +32,11 @@ definition of done.
   wrong JSON type, a duplicate member and a missing required member are each an entry of one
   `validation.failed`. An identifier travels in the path only; each operation binds its own request type, with
   scalar members only, and an update type declares only the fields that operation writes.
+- Every path variable, query parameter and header binds through `web::params` — `StrictPath<T>`,
+  `StrictQuery<T>`, `StrictHeaders<T>`, `T` deriving `Deserialize` and `IntoParams` and named in the operation's
+  `params(...)` — and every handler takes a `StrictQuery`, `StrictQuery<NoQuery>` when it declares none, so an
+  undeclared query parameter is refused on every route. `axum::extract::Path` and `Query` are banned outside
+  `web`. A refusal names its input: a body member by `pointer`, any other input by `in` and the declared `name`.
 - Money is `money::Money`, whole minor units; the only division is `money::mul_div_round`, which names its
   `RoundingMode`. A column is `NUMERIC(19,4)` or `NUMERIC(20,4)` with a currency sibling, read and written as
   `money_sql::DbAmount` (every `sqlx.toml` here maps NUMERIC to it; `store` declares `money-sql` with its first
@@ -86,7 +91,10 @@ the project `CLAUDE.md` it lifts and, in a standalone service, in this line.
 - A new wire error code goes in a `wire_errors!` or `field_codes!` catalog; a new catalog goes in
   `crates/api/tests/api/catalog.rs`. The tests write the new snapshot to `target/` and say so.
 - A new endpoint changes `openapi/v1.json`; the test writes the new document to `target/openapi/` and says so.
-  A new schema component needs a sample in `crates/api/tests/api/schemas.rs`.
+  A new schema component needs a sample in `crates/api/tests/api/schemas.rs`. A breaking change oasdiff refuses
+  against the base passes only when made on purpose for a document no consumer binds yet: the commit says why and
+  carries one `OpenAPI-break: <oasdiff id> <METHOD> <path>` trailer per finding the wall prints. A released
+  document that crosses the build boundary is not changed this way; the change ships as a new major version.
 - A new ban is one line in `clippy.toml` plus one marked violation in `canaries/bans/src/lib.rs`; the wall
   refuses either without the other. A crate that needs a banned path gets it through `clippy-scopes.toml`, then
   `node scripts/clippy-scopes.mjs --write`; never an `allow`, `expect` or `warn` naming a ban lint, which the
@@ -97,5 +105,5 @@ the project `CLAUDE.md` it lifts and, in a standalone service, in this line.
 - Integration test files start with `#![cfg(test)]`: clippy exempts unwrap, expect, panic and indexing only
   inside `cfg(test)` code. `tokio::select!` trips `integer_division_remainder_used` in its own expansion; use
   `std::future::poll_fn`, as `crates/server/src/main.rs` does.
-- The coverage floors (`scripts/wall.mjs`), `BODY_LIMIT`, the pool size, the migration timeouts and the
-  currency table are this service's call; change one in a commit that says why.
+- The coverage floors (`scripts/wall.mjs`), `REQUEST_BODY_MAX_BYTES` (default 65,536), the pool size, the
+  migration timeouts and the currency table are this service's call; change one in a commit that says why.

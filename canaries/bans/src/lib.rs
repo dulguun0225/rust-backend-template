@@ -156,6 +156,10 @@ pub struct Types {
     pub e: sqlx::QueryBuilder<sqlx::Postgres>, // expect: ban:sqlx::QueryBuilder
     pub f: axum::extract::RawForm, // expect: ban:axum::extract::RawForm
     pub g: axum::body::Bytes, // expect: ban:axum::body::Bytes
+    pub i: axum::extract::Path<u8>, // expect: ban:axum::extract::Path
+    pub j: axum::extract::Query<u8>, // expect: ban:axum::extract::Query
+    pub k: axum::extract::RawQuery, // expect: ban:axum::extract::RawQuery
+    pub l: axum::extract::RawPathParams, // expect: ban:axum::extract::RawPathParams
     pub h: uuid::Builder, // expect: ban:uuid::Builder
 }
 

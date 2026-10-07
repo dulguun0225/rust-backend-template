@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use time::macros::datetime;
 use web::codes::ApiFieldCode;
-use web::problem::{FieldError, Problem};
+use web::problem::{FieldError, FieldParam, Location, Problem};
 
 struct Sample {
     name: &'static str,
@@ -52,14 +52,18 @@ fn samples() -> Vec<Sample> {
             title: "Bad Request".to_owned(),
             status: 400,
             code: "validation.failed".to_owned(),
+            params: [("max".to_owned(), FieldParam::Integer(65_536))].into(),
             detail: Some("detail".to_owned()),
             errors: Some(vec![
                 FieldError::new("/name", GreetingFieldCode::Required),
                 FieldError::new("/name", GreetingFieldCode::TooLong { max: 100 }),
+                FieldError::at(Location::Query, "q", ApiFieldCode::UnknownField { allowed: &["a", "b"] }),
             ]),
+            errors_omitted: Some(1),
             incident_id: Some(platform::ids::new_id().to_string()),
         }),
         response(&FieldError::new("/a", ApiFieldCode::WrongType { expected: "string" }).with_detail("expected string")),
+        response(&FieldError::at(Location::Header, "X-Id", ApiFieldCode::InvalidValue { expected: "uuid" })),
     ]
 }
 
@@ -86,6 +90,19 @@ fn every_sample_validates_against_its_schema_and_every_request_binds_back() {
         assert!(errors.is_empty(), "{}: {} does not match its schema: {errors:?}", sample.name, sample.json);
         assert_ne!(sample.binds_back, Some(false), "{}: {} does not bind back to its value", sample.name, sample.json);
     }
+}
+
+/// The entry schema is one of a body entry and a parameter entry, never both: an entry naming a pointer and a
+/// location together, or neither, does not validate.
+#[test]
+fn an_entry_names_a_pointer_or_a_location_and_name_never_both() {
+    let document = serde_json::to_value(api::openapi()).unwrap();
+    let entry = validator(&document, "FieldError");
+    assert!(entry.is_valid(&json!({ "pointer": "/a", "code": "validation.required" })));
+    assert!(entry.is_valid(&json!({ "in": "query", "name": "a", "code": "validation.required" })));
+    assert!(!entry.is_valid(&json!({ "pointer": "/a", "in": "query", "name": "a", "code": "validation.required" })));
+    assert!(!entry.is_valid(&json!({ "code": "validation.required" })));
+    assert!(!entry.is_valid(&json!({ "in": "body", "name": "a", "code": "validation.required" })));
 }
 
 /// The negative control: a serde attribute utoipa ignores changes the JSON and the schema does not say so.

@@ -3,27 +3,33 @@
 //!
 //! The reader collects, in one pass over the body's top-level members, every failure the body has:
 //!
-//! - a member `T` does not declare: `validation.unknown-field`;
+//! - a member `T` does not declare: `validation.unknown-field`, param `allowed`, the members `T` declares;
 //! - a member named after one of the matched route's path variables, whatever its value:
 //!   `validation.identifier-in-path` (an identifier travels in the path only);
 //! - a member whose JSON type is not the declared one: `validation.wrong-type`, param `expected` and `detail`
 //!   `expected <type>`;
+//! - a string member declared `format: uuid` that is not the 36-character form: `validation.invalid-value`;
 //! - a member that appears twice in one object, at any depth: `validation.duplicate-member` at the pointer of
 //!   the repeated member, so no value is ever picked from two;
 //! - a required member that is absent: `validation.required`.
 //!
 //! The declared members, their JSON types and the required list are read from `T`'s generated schema — the
-//! schema the committed OpenAPI document publishes — so the contract and the reader cannot disagree. Then
-//! `T` is deserialized from the members that passed, and a value the type still refuses (a malformed UUID)
-//! is `validation.invalid-value` at its pointer. The value reaches the handler only through
-//! [`Bound::validate`], which merges these failures with the feature's own field rules into one
-//! `validation.failed`: binding failures first, sorted by pointer, then rule failures at pointers that hold
-//! none yet. A body that is missing, is not JSON, or is not an object is `validation.malformed-body`; a body
-//! over [`BODY_LIMIT`] is `request.too-large`; a body that is not `application/json` is
-//! `request.unsupported-media-type`. No detail is ever built from the value sent.
+//! schema the committed OpenAPI document publishes — so the contract and the reader cannot disagree; the
+//! members `allowed` lists, and an enumeration's values, are read from `T`'s `Deserialize`
+//! ([`crate::declared`]). Then `T` is deserialized from the members that passed, and a value the type still
+//! refuses is `validation.invalid-value` at its pointer, param `expected` (the schema's `format`, else its
+//! `type`), or `validation.unknown-value`, param `allowed`, for a value outside an enumeration. At most 100
+//! entries are recorded, while the body is read and after; the rest are counted in `errorsOmitted`. The value
+//! reaches the handler only through [`Bound::validate`], which merges these failures with the feature's own
+//! field rules into one `validation.failed`: binding failures first, sorted by pointer, then rule failures at
+//! pointers that hold none yet. A body that is missing, is not JSON, or is not an object is
+//! `validation.malformed-body`; a body over the limit `edge::finish` was given is `request.too-large`, param
+//! `max`; a body that is not `application/json` is `request.unsupported-media-type`. No detail is ever built
+//! from the value sent.
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::num::NonZeroU32;
 
 use axum::extract::{FromRequest, MatchedPath, Request};
 use axum::http::header;
@@ -33,10 +39,24 @@ use serde_json::{Map, Value};
 use utoipa::PartialSchema;
 
 use crate::codes::{ApiErrorCode, ApiFieldCode};
-use crate::problem::{ApiError, FieldError, pointer};
+use crate::declared;
+use crate::problem::{ApiError, Failures, FieldError, Target, pointer};
+use crate::scalar;
 
-/// The largest request body read, in bytes. `edge::finish` applies the same limit to the declared length.
-pub const BODY_LIMIT: usize = 65_536;
+/// The most bytes a request body may have, as `edge::finish` was given it: every request carries it, and the
+/// reader, the limit layer and the edge's 413 all report it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BodyLimit(pub(crate) NonZeroU32);
+
+impl BodyLimit {
+    pub(crate) const fn bytes(self) -> u32 {
+        self.0.get()
+    }
+
+    pub(crate) fn usize(self) -> usize {
+        usize::try_from(self.bytes()).unwrap_or(usize::MAX)
+    }
+}
 
 /// A request body read strictly. Destructure it and call [`Bound::validate`] before any transaction.
 #[derive(Debug)]
@@ -46,7 +66,7 @@ pub struct StrictJson<T>(pub Bound<T>);
 #[derive(Debug)]
 pub struct Bound<T> {
     value: Option<T>,
-    failures: Vec<FieldError>,
+    failures: Failures,
 }
 
 impl<T> Bound<T> {
@@ -68,8 +88,10 @@ impl<T> Bound<T> {
         };
         let mut rule_failures = Vec::new();
         let produced = rules(&value, &mut rule_failures);
-        let taken: BTreeSet<String> = failures.iter().map(|f| f.pointer.clone()).collect();
-        failures.extend(rule_failures.into_iter().filter(|f| !taken.contains(&f.pointer)));
+        let taken: BTreeSet<Target> = failures.entries().iter().map(|f| f.target.clone()).collect();
+        for failure in rule_failures.into_iter().filter(|f| !taken.contains(&f.target)) {
+            failures.push(failure);
+        }
         match produced {
             Some(validated) if failures.is_empty() => Ok(validated),
             Some(_) | None if !failures.is_empty() => Err(ApiError::Invalid(failures)),
@@ -86,12 +108,15 @@ where
     type Rejection = ApiError;
 
     async fn from_request(req: Request, _state: &S) -> Result<Self, Self::Rejection> {
+        let Some(limit) = req.extensions().get::<BodyLimit>().copied() else {
+            return Err(ApiError::internal("no body limit on the request: the router was not built by edge::finish"));
+        };
         let path_variables =
             req.extensions().get::<MatchedPath>().map(|m| template_variables(m.as_str())).unwrap_or_default();
         let is_json =
             req.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(is_json_media_type);
-        let bytes = axum::body::to_bytes(req.into_body(), BODY_LIMIT).await.map_err(|e| {
-            if is_length_limit(&e) { ApiError::rejected(ApiErrorCode::PayloadTooLarge) } else { ApiError::internal(e) }
+        let bytes = axum::body::to_bytes(req.into_body(), limit.usize()).await.map_err(|e| {
+            if is_length_limit(&e) { ApiError::too_large(limit.bytes()) } else { ApiError::internal(e) }
         })?;
         if bytes.iter().all(u8::is_ascii_whitespace) {
             return Err(ApiError::Malformed("the body is missing".to_owned()));
@@ -108,7 +133,7 @@ where
 /// request type; handlers never call it.
 #[must_use]
 pub fn bind<T: DeserializeOwned + PartialSchema>(members: Members, path_variables: &BTreeSet<String>) -> Bound<T> {
-    let Members { members, nested_duplicates } = members;
+    let Members { members, nested: mut failures } = members;
     let schema = serde_json::to_value(T::schema()).unwrap_or(Value::Null);
     let properties = schema.get("properties").and_then(Value::as_object).cloned().unwrap_or_default();
     let required: BTreeSet<String> = schema
@@ -117,14 +142,15 @@ pub fn bind<T: DeserializeOwned + PartialSchema>(members: Members, path_variable
         .map(|r| r.iter().filter_map(Value::as_str).map(str::to_owned).collect())
         .unwrap_or_default();
 
-    let mut failures: Vec<FieldError> =
-        nested_duplicates.into_iter().map(|at| FieldError::new(at, ApiFieldCode::DuplicateMember)).collect();
     let mut accepted = Map::new();
     let mut seen = BTreeSet::new();
+    let mut repeated = BTreeSet::new();
     for (name, value) in members {
         let at = pointer(&name);
         if !seen.insert(name.clone()) {
-            failures.push(FieldError::new(at, ApiFieldCode::DuplicateMember));
+            if repeated.insert(name.clone()) {
+                failures.push(FieldError::new(at, ApiFieldCode::DuplicateMember));
+            }
             accepted.remove(&name);
             continue;
         }
@@ -133,26 +159,23 @@ pub fn bind<T: DeserializeOwned + PartialSchema>(members: Members, path_variable
             continue;
         }
         let Some(declared) = properties.get(&name) else {
-            failures.push(FieldError::new(at, ApiFieldCode::UnknownField));
+            failures.push(FieldError::new(at, ApiFieldCode::UnknownField { allowed: declared::members::<T>() }));
             continue;
         };
-        match type_mismatch(declared, &value) {
-            Some(expected) => failures
-                .push(FieldError::new(at, ApiFieldCode::WrongType { expected }).with_detail(expected_detail(expected))),
+        match refusal(declared, &value) {
+            Some((code, expected)) => failures.push(FieldError::new(at, code).expecting(expected)),
             None => {
                 accepted.insert(name, value);
             }
         }
     }
-    let failed: BTreeSet<&str> = failures.iter().map(|f| f.pointer.as_str()).collect();
-    let mut missing = Vec::new();
+    let failed: BTreeSet<Target> = failures.entries().iter().map(|f| f.target.clone()).collect();
     for name in &required {
         let at = pointer(name);
-        if !seen.contains(name) && !failed.contains(at.as_str()) {
-            missing.push(FieldError::new(at, ApiFieldCode::Required));
+        if !seen.contains(name) && !failed.contains(&Target::Pointer(at.clone())) {
+            failures.push(FieldError::new(at, ApiFieldCode::Required));
         }
     }
-    failures.extend(missing);
     if required.iter().any(|name| !accepted.contains_key(name)) {
         return Bound { value: None, failures };
     }
@@ -168,18 +191,37 @@ pub fn bind<T: DeserializeOwned + PartialSchema>(members: Members, path_variable
                 .and_then(|rest| rest.split('`').next().map(str::to_owned));
             let failure = match missing {
                 Some(field) => FieldError::new(pointer(&field), ApiFieldCode::Required),
-                None => FieldError::new(
-                    e.path().iter().next().map_or_else(|| "/".to_owned(), |segment| pointer(&segment.to_string())),
-                    ApiFieldCode::InvalidValue,
-                ),
+                None => {
+                    let member = e.path().iter().next().map(ToString::to_string);
+                    let at = member.as_deref().map_or_else(String::new, pointer);
+                    match member.as_deref().and_then(|m| declared::values::<T>(m)) {
+                        Some(allowed) => FieldError::new(at, ApiFieldCode::UnknownValue { allowed }),
+                        None => {
+                            let declared = member.as_deref().and_then(|m| properties.get(m)).unwrap_or(&schema);
+                            let expected = scalar::expected(declared);
+                            FieldError::new(at, ApiFieldCode::InvalidValue { expected }).expecting(expected)
+                        }
+                    }
+                }
             };
             // A member already refused above is absent from what was deserialized; its failure stands alone.
-            if !failures.iter().any(|f| f.pointer == failure.pointer) {
+            if !failures.entries().iter().any(|f| f.target == failure.target) {
                 failures.push(failure);
             }
             Bound { value: None, failures }
         }
     }
+}
+
+/// The code refusing a member's value before it is deserialized, with the word its detail names: a JSON type
+/// that is not the declared one, or a UUID that is not in its 36-character form.
+fn refusal(declared: &Value, value: &Value) -> Option<(ApiFieldCode, &'static str)> {
+    if let Some(expected) = type_mismatch(declared, value) {
+        return Some((ApiFieldCode::WrongType { expected }, expected));
+    }
+    let is_uuid = declared.get("format").and_then(Value::as_str) == Some("uuid");
+    let refused = value.as_str().is_some_and(|text| is_uuid && !scalar::is_uuid_text(text));
+    refused.then_some((ApiFieldCode::InvalidValue { expected: "uuid" }, "uuid"))
 }
 
 /// The JSON type a declared member expects, when `value` is not of it.
@@ -212,23 +254,13 @@ fn type_mismatch(declared: &Value, value: &Value) -> Option<&'static str> {
 /// (crates/api/tests/api/openapi.rs), so no other type is ever expected.
 const JSON_TYPES: [&str; 4] = ["string", "boolean", "integer", "number"];
 
-fn expected_detail(json_type: &str) -> &'static str {
-    match json_type {
-        "string" => "expected string",
-        "boolean" => "expected boolean",
-        "integer" => "expected integer",
-        "number" => "expected number",
-        _ => "expected another type",
-    }
-}
-
-/// A body's top-level members, in order, duplicates kept, and the pointer of every member repeated inside a
-/// member's value. `serde_json::Value` keeps one value of a repeated member silently, so the reader records the
-/// repetition while it reads, before any value is built.
+/// A body's top-level members, in order, duplicates kept, and an entry for every member repeated inside a
+/// member's value, at most 100 of them recorded. `serde_json::Value` keeps one value of a repeated member
+/// silently, so the reader records the repetition while it reads, before any value is built.
 #[derive(Debug)]
 pub struct Members {
     members: Vec<(String, Value)>,
-    nested_duplicates: BTreeSet<String>,
+    nested: Failures,
 }
 
 /// The body's members.
@@ -262,13 +294,12 @@ impl<'de> Deserialize<'de> for Members {
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Members, A::Error> {
                 let mut members = Vec::new();
-                let mut nested_duplicates = BTreeSet::new();
+                let mut nested = Failures::default();
                 while let Some(name) = map.next_key::<String>()? {
-                    let Read(value) =
-                        map.next_value_seed(Tracked { at: pointer(&name), duplicates: &mut nested_duplicates })?;
+                    let Read(value) = map.next_value_seed(Tracked { at: pointer(&name), duplicates: &mut nested })?;
                     members.push((name, value));
                 }
-                Ok(Members { members, nested_duplicates })
+                Ok(Members { members, nested })
             }
         }
 
@@ -276,11 +307,11 @@ impl<'de> Deserialize<'de> for Members {
     }
 }
 
-/// Reads one JSON value at pointer `at`, recording the pointer of each member its objects repeat. Depth is
+/// Reads one JSON value at pointer `at`, recording an entry for each member its objects repeat. Depth is
 /// bounded by `serde_json`'s recursion limit, which it checks before every array and object.
 struct Tracked<'a> {
     at: String,
-    duplicates: &'a mut BTreeSet<String>,
+    duplicates: &'a mut Failures,
 }
 
 /// A value [`Tracked`] read. It has no default, so no read can stand in for null by defaulting.
@@ -338,13 +369,14 @@ impl<'de> Visitor<'de> for Tracked<'_> {
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Read, A::Error> {
         let mut object = Map::new();
+        let mut repeated = BTreeSet::new();
         while let Some(name) = map.next_key::<String>()? {
             let at = format!("{}{}", self.at, pointer(&name));
             let Read(value) = map.next_value_seed(Tracked { at: at.clone(), duplicates: self.duplicates })?;
-            if object.contains_key(&name) {
-                self.duplicates.insert(at);
-            } else {
+            if !object.contains_key(&name) {
                 object.insert(name, value);
+            } else if repeated.insert(name) {
+                self.duplicates.push(FieldError::new(at, ApiFieldCode::DuplicateMember));
             }
         }
         Ok(Read(Value::Object(object)))
@@ -380,7 +412,7 @@ fn is_length_limit(error: &axum::Error) -> bool {
 mod tests {
     use super::{Bound, Tracked, bind, read_members, template_variables};
     use crate::codes::ApiFieldCode;
-    use crate::problem::{ApiError, FieldError};
+    use crate::problem::{ApiError, Failures, FieldError, Target};
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeSet;
     use utoipa::ToSchema;
@@ -390,11 +422,20 @@ mod tests {
     struct Probe {
         given_name: String,
         count: i64,
+        small: i32,
         ratio: f64,
         active: bool,
         id: uuid::Uuid,
+        kind: Kind,
         #[serde(deserialize_with = "Deserialize::deserialize")]
         nickname: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+    #[serde(deny_unknown_fields, rename_all = "lowercase")]
+    enum Kind {
+        Plain,
+        Fancy,
     }
 
     fn bound(json: &str, path: &[&str]) -> Bound<Probe> {
@@ -402,22 +443,37 @@ mod tests {
         bind::<Probe>(read_members(json.as_bytes()).unwrap(), &vars)
     }
 
-    fn entries(result: Result<(), ApiError>) -> Vec<(String, String, Option<String>)> {
+    fn refused(result: Result<(), ApiError>) -> Failures {
         match result {
-            Err(ApiError::Invalid(errors)) => errors.into_iter().map(|e| (e.pointer, e.code, e.detail)).collect(),
+            Err(ApiError::Invalid(failures)) => failures,
             other => panic!("expected validation.failed, got {other:?}"),
         }
     }
 
-    const GOOD: &str = r#"{"givenName":"a","count":-1,"ratio":0.5,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","nickname":null}"#;
+    fn entries(result: Result<(), ApiError>) -> Vec<(String, String, Option<String>)> {
+        refused(result)
+            .entries()
+            .iter()
+            .map(|e| match &e.target {
+                Target::Pointer(pointer) => (pointer.clone(), e.code.clone(), e.detail.clone()),
+                Target::Parameter(..) => panic!("a body entry named a parameter: {e:?}"),
+            })
+            .collect()
+    }
+
+    const GOOD: &str = r#"{"givenName":"a","count":-1,"small":2,"ratio":0.5,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","kind":"plain","nickname":null}"#;
 
     #[test]
     fn a_body_that_fits_binds() {
-        let value =
-            bound(GOOD, &[]).validate(|p, _| Some((p.given_name.clone(), p.count, p.nickname.clone()))).unwrap();
-        assert_eq!(value, ("a".to_owned(), -1, None));
-        let named = GOOD.replace(r#""nickname":null"#, r#""nickname":"b""#);
-        assert_eq!(bound(&named, &[]).validate(|p, _| p.nickname.clone()).unwrap(), "b");
+        let value = bound(GOOD, &[])
+            .validate(|p, _| Some((p.given_name.clone(), p.count, p.small, p.nickname.clone(), p.id.to_string())))
+            .unwrap();
+        assert_eq!(value, ("a".to_owned(), -1, 2, None, "0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2".to_owned()));
+        let named = GOOD.replace(r#""nickname":null"#, r#""nickname":"b""#).replace("plain", "fancy");
+        assert_eq!(
+            bound(&named, &[]).validate(|p, _| Some((p.nickname.clone(), p.kind == Kind::Fancy))).unwrap(),
+            (Some("b".to_owned()), true)
+        );
     }
 
     #[test]
@@ -439,8 +495,7 @@ mod tests {
 
     #[test]
     fn every_binding_failure_is_collected_in_one_pass_sorted_by_pointer() {
-        let body =
-            r#"{"zeta":1,"givenName":7,"count":1.5,"ratio":"x","active":true,"slug":"s","a/b":0,"nickname":null}"#;
+        let body = r#"{"zeta":1,"givenName":7,"count":1.5,"small":1,"ratio":"x","active":true,"kind":"plain","slug":"s","a/b":0,"nickname":null}"#;
         let got = entries(bound(body, &["slug"]).validate(|_, _| Some(())));
         assert_eq!(
             got,
@@ -457,18 +512,64 @@ mod tests {
     }
 
     #[test]
-    fn a_duplicate_member_and_a_malformed_uuid_are_refused() {
-        let dup = r#"{"givenName":"a","givenName":"b","count":1,"ratio":1,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","nickname":null}"#;
-        let got = entries(bound(dup, &[]).validate(|_, _| Some(())));
+    fn an_undeclared_member_is_refused_with_the_members_the_type_declares() {
+        let body = GOOD.replace(r#""count":-1"#, r#""cuont":-1"#);
+        let failures = refused(bound(&body, &[]).validate(|_, _| Some(())));
+        let entries = serde_json::to_value(failures.entries()).unwrap();
+        assert_eq!(
+            entries,
+            serde_json::json!([
+                { "pointer": "/count", "code": "validation.required" },
+                { "pointer": "/cuont", "code": "validation.unknown-field",
+                  "params": { "allowed": ["active", "count", "givenName", "id", "kind", "nickname", "ratio", "small"] } },
+            ])
+        );
+    }
+
+    #[test]
+    fn a_duplicate_member_and_a_uuid_not_in_its_one_form_are_refused() {
+        let dup = GOOD.replace(r#""givenName":"a""#, r#""givenName":"a","givenName":"b","givenName":"c""#);
+        let got = entries(bound(&dup, &[]).validate(|_, _| Some(())));
         assert_eq!(got, [("/givenName".into(), "validation.duplicate-member".into(), None)]);
-        let bad_id = r#"{"givenName":"a","count":1,"ratio":1,"active":true,"id":"not-a-uuid","nickname":null}"#;
-        let got = entries(bound(bad_id, &[]).validate(|_, _| Some(())));
-        assert_eq!(got, [("/id".into(), "validation.invalid-value".into(), None)]);
+        for id in [
+            "not-a-uuid",
+            "{0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2}",
+            "urn:uuid:0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2",
+            "0192f0c18b397cc49a416f8e62a4a1b2",
+            "",
+        ] {
+            let bad_id = GOOD.replace("0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2", id);
+            let failures = refused(bound(&bad_id, &[]).validate(|_, _| Some(())));
+            assert_eq!(
+                serde_json::to_value(failures.entries()).unwrap(),
+                serde_json::json!([{ "pointer": "/id", "code": "validation.invalid-value",
+                                     "params": { "expected": "uuid" }, "detail": "expected uuid" }]),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_value_the_type_refuses_names_its_format_and_an_unknown_value_its_values() {
+        let big = GOOD.replace(r#""small":2"#, r#""small":3000000000"#);
+        let failures = refused(bound(&big, &[]).validate(|_, _| Some(())));
+        assert_eq!(
+            serde_json::to_value(failures.entries()).unwrap(),
+            serde_json::json!([{ "pointer": "/small", "code": "validation.invalid-value",
+                                 "params": { "expected": "int32" }, "detail": "expected int32" }])
+        );
+        let unknown = GOOD.replace("plain", "Plain");
+        let failures = refused(bound(&unknown, &[]).validate(|_, _| Some(())));
+        assert_eq!(
+            serde_json::to_value(failures.entries()).unwrap(),
+            serde_json::json!([{ "pointer": "/kind", "code": "validation.unknown-value",
+                                 "params": { "allowed": ["fancy", "plain"] } }])
+        );
     }
 
     #[test]
     fn a_duplicate_member_at_any_depth_is_refused_where_it_is() {
-        let body = r#"{"givenName":{"a":1,"b":[{"c":1,"c":2},{"d":1,"d":2}],"a":2},"count":1,"ratio":1,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","nickname":null,"nickname":null}"#;
+        let body = r#"{"givenName":{"a":1,"b":[{"c":1,"c":2,"c":3},{"d":1,"d":2}],"a":2},"count":1,"small":1,"ratio":1,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","kind":"plain","nickname":null,"nickname":null}"#;
         let got = entries(bound(body, &[]).validate(|_, _| Some(())));
         assert_eq!(
             got,
@@ -483,20 +584,33 @@ mod tests {
     }
 
     #[test]
+    fn at_most_100_entries_are_recorded_and_the_rest_counted() {
+        let undeclared: String = (0..101).map(|n| format!(r#","u{n:03}":0"#)).collect();
+        let body = GOOD.replace(r#""nickname":null"#, &format!(r#""nickname":null{undeclared}"#));
+        let failures = refused(bound(&body, &[]).validate(|_, _| Some(())));
+        assert_eq!((failures.entries().len(), failures.omitted()), (100, 1));
+        let repeated: String = (0..101).map(|n| format!(r#""r{n:03}":0,"r{n:03}":0,"#)).collect();
+        let body = GOOD.replace(r#""givenName":"a""#, &format!(r#""givenName":{{{repeated}"x":0}}"#));
+        let failures = refused(bound(&body, &[]).validate(|_, _| Some(())));
+        assert_eq!((failures.entries().len(), failures.omitted()), (100, 2));
+        let members = read_members(body.as_bytes()).unwrap();
+        assert_eq!((members.nested.entries().len(), members.nested.omitted()), (100, 1));
+    }
+
+    #[test]
     fn the_reader_keeps_every_value_as_sent() {
-        let body =
-            r#"{"a":[null,true,false,-7,18446744073709551615,0.25,"s\u00e9",{"b":{"c":[]}}],"d":{},"e":"plain"}"#;
+        let body = r#"{"a":[null,true,false,-7,18446744073709551615,0.25,"sé",{"b":{"c":[]}}],"d":{},"e":"plain"}"#;
         let members = read_members(body.as_bytes()).unwrap();
         let expected: serde_json::Value = body.parse().unwrap();
         let expected: Vec<_> = expected.as_object().unwrap().clone().into_iter().collect();
         assert_eq!(members.members, expected);
-        assert!(members.nested_duplicates.is_empty());
+        assert!(members.nested.is_empty());
     }
 
     #[test]
     fn the_value_reader_names_what_it_expects() {
         use serde::de::DeserializeSeed;
-        let mut duplicates = BTreeSet::new();
+        let mut duplicates = Failures::default();
         let refused = Tracked { at: "/a".to_owned(), duplicates: &mut duplicates }
             .deserialize(serde::de::value::BytesDeserializer::<serde::de::value::Error>::new(b"x"))
             .unwrap_err();
@@ -522,8 +636,8 @@ mod tests {
 
     #[test]
     fn rule_failures_follow_binding_failures_except_at_a_taken_pointer() {
-        let body = r#"{"givenName":"a","count":1,"ratio":1,"active":true,"id":"0192f0c1-8b39-7cc4-9a41-6f8e62a4a1b2","nickname":null,"extra":1}"#;
-        let got = entries(bound(body, &[]).validate(|_, errors| {
+        let body = GOOD.replace(r#""nickname":null"#, r#""nickname":null,"extra":1"#);
+        let got = entries(bound(&body, &[]).validate(|_, errors| {
             errors.push(FieldError::new("/extra", ApiFieldCode::Required));
             errors.push(FieldError::new("/givenName", ApiFieldCode::Required));
             None::<()>

@@ -14,4 +14,4 @@ mod types;
 
 pub use codes::{GreetingErrorCode, GreetingFieldCode};
 pub use handlers::{__path_create_greeting, __path_get_greeting, create_greeting, get_greeting};
-pub use types::{CreateGreetingRequest, GreetingView, NAME_MAX_CHARS};
+pub use types::{CreateGreetingRequest, GreetingPath, GreetingView, NAME_MAX_CHARS};

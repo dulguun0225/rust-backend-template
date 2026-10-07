@@ -1,18 +1,19 @@
-# wire code -> status (declaring enum); a field code: `-` for the status, then {param: JSON type, ...}. Written by crates/api/tests/api/catalog.rs.
-not-found -> 404 (ApiErrorCode::NotFound)
-not-found -> 404 (GreetingErrorCode::NotFound)
-platform.internal -> 500 (ApiErrorCode::Internal)
-request.method-not-allowed -> 405 (ApiErrorCode::MethodNotAllowed)
-request.too-large -> 413 (ApiErrorCode::PayloadTooLarge)
-request.unsupported-media-type -> 415 (ApiErrorCode::UnsupportedMediaType)
-validation.bad-request -> 400 (ApiErrorCode::BadRequest)
+# wire code -> status (declaring enum) {param: JSON type, ...}; a field code has `-` for the status. Written by crates/api/tests/api/catalog.rs.
+not-found -> 404 (ApiErrorCode::NotFound) {}
+not-found -> 404 (GreetingErrorCode::NotFound) {}
+platform.internal -> 500 (ApiErrorCode::Internal) {}
+request.method-not-allowed -> 405 (ApiErrorCode::MethodNotAllowed) {}
+request.too-large -> 413 (ApiErrorCode::PayloadTooLarge) {max: integer}
+request.unsupported-media-type -> 415 (ApiErrorCode::UnsupportedMediaType) {}
+validation.bad-request -> 400 (ApiErrorCode::BadRequest) {}
 validation.duplicate-member -> - (ApiFieldCode::DuplicateMember) {}
-validation.failed -> 400 (ApiErrorCode::ValidationFailed)
+validation.failed -> 400 (ApiErrorCode::ValidationFailed) {}
 validation.identifier-in-path -> - (ApiFieldCode::IdentifierInPath) {}
-validation.invalid-value -> - (ApiFieldCode::InvalidValue) {}
-validation.malformed-body -> 400 (ApiErrorCode::MalformedBody)
+validation.invalid-value -> - (ApiFieldCode::InvalidValue) {expected: string}
+validation.malformed-body -> 400 (ApiErrorCode::MalformedBody) {}
 validation.required -> - (ApiFieldCode::Required) {}
 validation.required -> - (GreetingFieldCode::Required) {}
 validation.too-long -> - (GreetingFieldCode::TooLong) {max: integer}
-validation.unknown-field -> - (ApiFieldCode::UnknownField) {}
+validation.unknown-field -> - (ApiFieldCode::UnknownField) {allowed: array}
+validation.unknown-value -> - (ApiFieldCode::UnknownValue) {allowed: array}
 validation.wrong-type -> - (ApiFieldCode::WrongType) {expected: string}

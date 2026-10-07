@@ -138,6 +138,10 @@ disallowed-types = [
   { path = "sqlx::QueryBuilder", reason = "runtime-built SQL is unchecked; use sqlx::query!" },
   { path = "axum::extract::RawForm", reason = "request bodies bind as web::body::StrictJson" },
   { path = "axum::body::Bytes", reason = "request bodies bind as web::body::StrictJson" },
+  { path = "axum::extract::Path", reason = "path variables bind as web::params::StrictPath, which refuses with a coded entry" },
+  { path = "axum::extract::Query", reason = "query parameters bind as web::params::StrictQuery, which refuses an undeclared one" },
+  { path = "axum::extract::RawQuery", reason = "query parameters bind as web::params::StrictQuery, which refuses an undeclared one" },
+  { path = "axum::extract::RawPathParams", reason = "path variables bind as web::params::StrictPath, which refuses with a coded entry" },
   { path = "uuid::Builder", reason = "ids come from platform::ids::new_id" },
 ]
 

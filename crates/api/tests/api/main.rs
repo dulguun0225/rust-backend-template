@@ -8,5 +8,6 @@ mod common;
 mod edge;
 mod greeting;
 mod openapi;
+mod params;
 mod schemas;
 mod strict_body;

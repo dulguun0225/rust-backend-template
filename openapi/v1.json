@@ -16,50 +16,119 @@
         "type": "object"
       },
       "FieldError": {
-        "description": "One entry of a validation.failed problem.",
-        "properties": {
-          "code": {
-            "description": "A field code, e.g. validation.required.",
-            "type": "string"
-          },
-          "detail": {
-            "description": "Caller-safe text naming what was expected, e.g. `expected boolean`; never the value sent.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "params": {
-            "additionalProperties": {
-              "description": "One param of a field error: a JSON integer or a JSON string.",
-              "oneOf": [
-                {
-                  "description": "An integer, such as a maximum length.",
-                  "format": "int64",
-                  "type": "integer"
+        "description": "One entry of a validation.failed problem: a body member, or another input.",
+        "oneOf": [
+          {
+            "description": "A body member.",
+            "properties": {
+              "code": {
+                "description": "A field code, e.g. validation.required.",
+                "type": "string"
+              },
+              "detail": {
+                "description": "Caller-safe text naming what was expected, e.g. `expected boolean`; never the value sent.",
+                "type": "string"
+              },
+              "params": {
+                "additionalProperties": {
+                  "description": "One param of a code: a JSON integer, a JSON string, or a JSON array of strings.",
+                  "oneOf": [
+                    {
+                      "description": "An integer, such as a maximum length.",
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    {
+                      "description": "A string fixed in the source, such as an expected JSON type.",
+                      "type": "string"
+                    },
+                    {
+                      "description": "Strings fixed in the source, sorted, such as the members a type declares.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
                 },
-                {
-                  "description": "A string fixed in the source, such as an expected JSON type.",
+                "description": "What is allowed, by name, e.g. `{\"max\": 100}` on validation.too-long: exactly the params the code declares in the error catalog, absent when it declares none. Never the value sent.",
+                "propertyNames": {
                   "type": "string"
-                }
-              ]
+                },
+                "type": "object"
+              },
+              "pointer": {
+                "description": "RFC 6901 JSON pointer to the member, e.g. /name; \"\" is the whole body.",
+                "type": "string"
+              }
             },
-            "description": "What is allowed, by name, e.g. `{\"max\": 100}` on validation.too-long: exactly the params the code\ndeclares in the error catalog, absent when it declares none. Never the value sent.",
-            "propertyNames": {
-              "type": "string"
-            },
+            "required": [
+              "pointer",
+              "code"
+            ],
             "type": "object"
           },
-          "pointer": {
-            "description": "RFC 6901 JSON pointer to the member, e.g. /name.",
-            "type": "string"
+          {
+            "description": "A path variable, query parameter or header.",
+            "properties": {
+              "code": {
+                "description": "A field code, e.g. validation.required.",
+                "type": "string"
+              },
+              "detail": {
+                "description": "Caller-safe text naming what was expected, e.g. `expected boolean`; never the value sent.",
+                "type": "string"
+              },
+              "in": {
+                "description": "Where the input travels, as OpenAPI's parameter `in` names it.",
+                "enum": [
+                  "path",
+                  "query",
+                  "header"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "description": "The input's name as the document declares it, never as it was sent.",
+                "type": "string"
+              },
+              "params": {
+                "additionalProperties": {
+                  "description": "One param of a code: a JSON integer, a JSON string, or a JSON array of strings.",
+                  "oneOf": [
+                    {
+                      "description": "An integer, such as a maximum length.",
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    {
+                      "description": "A string fixed in the source, such as an expected JSON type.",
+                      "type": "string"
+                    },
+                    {
+                      "description": "Strings fixed in the source, sorted, such as the members a type declares.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                },
+                "description": "What is allowed, by name, e.g. `{\"max\": 100}` on validation.too-long: exactly the params the code declares in the error catalog, absent when it declares none. Never the value sent.",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "in",
+              "name",
+              "code"
+            ],
+            "type": "object"
           }
-        },
-        "required": [
-          "pointer",
-          "code"
-        ],
-        "type": "object"
+        ]
       },
       "GreetingView": {
         "description": "A greeting as the service returns it.",
@@ -115,12 +184,49 @@
               "null"
             ]
           },
+          "errorsOmitted": {
+            "description": "Present only on validation.failed, when more inputs failed than the 100 entries `errors` holds: how\nmany more.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "incidentId": {
             "description": "Present only on platform.internal (500): the request's correlation id, which the server log carries.",
             "type": [
               "string",
               "null"
             ]
+          },
+          "params": {
+            "additionalProperties": {
+              "description": "One param of a code: a JSON integer, a JSON string, or a JSON array of strings.",
+              "oneOf": [
+                {
+                  "description": "An integer, such as a maximum length.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                {
+                  "description": "A string fixed in the source, such as an expected JSON type.",
+                  "type": "string"
+                },
+                {
+                  "description": "Strings fixed in the source, sorted, such as the members a type declares.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "description": "What is allowed, by name, e.g. `{\"max\": 65536}` on request.too-large: exactly the params the response\ncode declares in the error catalog, absent when it declares none. Never the value sent.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
           },
           "status": {
             "description": "The HTTP status.",
@@ -185,7 +291,17 @@
                 }
               }
             },
-            "description": "validation.failed (a field rule, an undeclared member, a wrong JSON type), validation.malformed-body"
+            "description": "validation.failed (a field rule, an undeclared member, a wrong JSON type, an undeclared query parameter), validation.malformed-body"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "request.too-large, `params.max` the most bytes a body may have"
           }
         },
         "summary": "Create one greeting.",
@@ -219,6 +335,16 @@
               }
             },
             "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "validation.failed (an id that is not a UUID in its 36-character form, an undeclared query parameter)"
           },
           "404": {
             "content": {

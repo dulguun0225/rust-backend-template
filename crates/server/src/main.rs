@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let state = api::AppState { tx, clock: Arc::new(platform::clock::SystemClock) };
     let listener = tokio::net::TcpListener::bind(config.bind).await.context("binding the listener")?;
     LOG.info("listening", &[LogField::count("port", u64::from(config.bind.port()))]);
-    web::edge::serve(listener, api::app(state), shutdown()).await.context("serving")?;
+    web::edge::serve(listener, api::app(state, config.request_body_max_bytes), shutdown()).await.context("serving")?;
     LOG.info("stopped", &[]);
     Ok(())
 }

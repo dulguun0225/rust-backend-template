@@ -1,11 +1,12 @@
 //! What every API test uses: the app over a test database, a request helper, the captured log, and the
 //! test-only routes that exercise what the worked example cannot.
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use api::AppState;
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::{HeaderMap, Method, Request, StatusCode};
 use http_body_util::BodyExt as _;
 use platform::clock::FixedClock;
@@ -14,11 +15,20 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use time::macros::datetime;
 use tower::ServiceExt as _;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use web::body::StrictJson;
+use web::params::{NoQuery, StrictHeaders, StrictPath, StrictQuery};
 use web::problem::ApiError;
+
+/// The request-body limit the tests build the router with: not the configured default, so a test that passes
+/// shows the limit given to `web::edge::finish` is the one applied and reported.
+pub const BODY_LIMIT: u32 = 4096;
+
+fn body_limit() -> NonZeroU32 {
+    NonZeroU32::new(BODY_LIMIT).unwrap()
+}
 
 /// The served router, its document, and the seam whose transaction count a test reads.
 pub struct TestApp {
@@ -35,7 +45,7 @@ fn state(pool: PgPool) -> AppState {
 pub fn app(pool: PgPool) -> TestApp {
     let state = state(pool);
     let tx = state.tx.clone();
-    let (router, document) = web::edge::finish(api::routes(), state);
+    let (router, document) = web::edge::finish(api::routes(), state, body_limit());
     TestApp { router, document, tx }
 }
 
@@ -45,8 +55,9 @@ pub fn app_with_probes(pool: PgPool) -> TestApp {
     let tx = state.tx.clone();
     let routes = api::routes()
         .merge(OpenApiRouter::new().routes(routes!(update_probe)).routes(routes!(lenient_probe)))
+        .merge(OpenApiRouter::new().routes(routes!(params_probe)))
         .merge(OpenApiRouter::new().routes(routes!(boom)).routes(routes!(internal_failure)));
-    let (router, document) = web::edge::finish(routes, state);
+    let (router, document) = web::edge::finish(routes, state, body_limit());
     TestApp { router, document, tx }
 }
 
@@ -131,25 +142,83 @@ pub struct ProbeRequest {
     pub active: bool,
 }
 
+/// The probe route's path.
+#[derive(Debug, Deserialize, IntoParams)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[into_params(parameter_in = Path)]
+pub struct ProbePath {
+    pub probe_id: uuid::Uuid,
+}
+
 /// Test only: a strict body under a path variable. Opens one write transaction when the body passes.
-#[utoipa::path(put, path = "/test/probes/{probeId}", request_body = ProbeRequest, params(("probeId" = uuid::Uuid, Path)),
-    responses((status = 204), (status = 400, body = web::problem::Problem, content_type = "application/problem+json")))]
+#[utoipa::path(put, path = "/test/probes/{probeId}", request_body = ProbeRequest, params(ProbePath),
+    responses((status = 204), (status = 400, body = web::problem::Problem, content_type = "application/problem+json"),
+        (status = 413, body = web::problem::Problem, content_type = "application/problem+json")))]
 pub async fn update_probe(
     State(state): State<AppState>,
-    Path(_probe_id): Path<uuid::Uuid>,
+    StrictPath(ProbePath { probe_id }): StrictPath<ProbePath>,
+    StrictQuery(NoQuery {}): StrictQuery<NoQuery>,
     StrictJson(body): StrictJson<ProbeRequest>,
 ) -> Result<StatusCode, ApiError> {
+    let _read = probe_id;
     let _label = body.validate(|p, _| Some(p.label.clone()))?;
     state.tx.write(async |_| Ok::<(), db::DbError>(())).await.map_err(ApiError::internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Test only, the negative control: it documents a strict body and reads the body leniently, so the sweep
-/// must report it. Opens one read transaction on every request, so the sweep's zero is a measurement.
+/// Test only, the negative control of both sweeps: it documents a strict body and reads the body leniently,
+/// and reads no query, so an undeclared query parameter is answered 200. Each sweep must report it. Opens one
+/// read transaction on every request, so the body sweep's zero is a measurement.
 #[utoipa::path(post, path = "/test/lenient", request_body = ProbeRequest, responses((status = 200)))]
 pub async fn lenient_probe(State(state): State<AppState>, _body: String) -> Result<StatusCode, ApiError> {
     state.tx.read(async |_| Ok::<(), db::DbError>(())).await.map_err(ApiError::internal)?;
     Ok(StatusCode::OK)
+}
+
+/// The probe route's query: a required integer and an optional enumeration.
+#[derive(Debug, Deserialize, IntoParams)]
+#[serde(deny_unknown_fields)]
+#[into_params(parameter_in = Query)]
+pub struct ProbeQuery {
+    pub count: i32,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    pub kind: Option<ProbeKind>,
+}
+
+/// The probe route's enumeration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields, rename_all = "lowercase")]
+pub enum ProbeKind {
+    Plain,
+    Fancy,
+}
+
+/// The probe route's header: a UUID, declared with capitals so a test can tell the declared spelling from the
+/// one sent.
+#[derive(Debug, Deserialize, IntoParams)]
+#[serde(deny_unknown_fields)]
+#[into_params(parameter_in = Header)]
+pub struct ProbeHeaders {
+    #[serde(rename = "X-Probe-Id")]
+    pub probe_id: uuid::Uuid,
+}
+
+/// Test only: a strict query and a strict header. Answers 204, with the values read in headers, when both pass.
+#[utoipa::path(get, path = "/test/params", params(ProbeQuery, ProbeHeaders),
+    responses((status = 204), (status = 400, body = web::problem::Problem, content_type = "application/problem+json")))]
+pub async fn params_probe(
+    StrictQuery(query): StrictQuery<ProbeQuery>,
+    StrictHeaders(headers): StrictHeaders<ProbeHeaders>,
+) -> (StatusCode, [(&'static str, String); 3]) {
+    let kind = query.kind.map_or("none", |kind| if kind == ProbeKind::Fancy { "fancy" } else { "plain" });
+    (
+        StatusCode::NO_CONTENT,
+        [
+            ("x-count", query.count.to_string()),
+            ("x-kind", kind.to_owned()),
+            ("x-probe-id", headers.probe_id.to_string()),
+        ],
+    )
 }
 
 pub const PANIC_SENTINEL: &str = "panic-sentinel-7f3a";
@@ -157,12 +226,12 @@ pub const CAUSE_SENTINEL: &str = "cause-sentinel-91cd";
 
 /// Test only: a handler that panics with a sentinel message.
 #[utoipa::path(get, path = "/test/boom", responses((status = 200)))]
-pub async fn boom() -> StatusCode {
+pub async fn boom(StrictQuery(NoQuery {}): StrictQuery<NoQuery>) -> StatusCode {
     std::panic::panic_any(PANIC_SENTINEL)
 }
 
 /// Test only: a handler that fails with an internal error carrying a sentinel cause.
 #[utoipa::path(get, path = "/test/internal", responses((status = 200)))]
-pub async fn internal_failure() -> Result<StatusCode, ApiError> {
+pub async fn internal_failure(StrictQuery(NoQuery {}): StrictQuery<NoQuery>) -> Result<StatusCode, ApiError> {
     Err(ApiError::internal(CAUSE_SENTINEL))
 }

@@ -50,7 +50,17 @@ async fn every_refusal_is_one_validation_failed_and_opens_no_transaction(pool: P
         ("{}".to_owned(), vec![required.clone()]),
         (
             r#"{"name":"   ","nickname":"x"}"#.to_owned(),
-            vec![json!({ "pointer": "/nickname", "code": "validation.unknown-field" }), required],
+            vec![
+                json!({ "pointer": "/nickname", "code": "validation.unknown-field", "params": { "allowed": ["name"] } }),
+                required.clone(),
+            ],
+        ),
+        (
+            r#"{"nmae":"x"}"#.to_owned(),
+            vec![
+                required,
+                json!({ "pointer": "/nmae", "code": "validation.unknown-field", "params": { "allowed": ["name"] } }),
+            ],
         ),
         (
             r#"{"name":true}"#.to_owned(),

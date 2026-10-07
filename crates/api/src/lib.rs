@@ -5,6 +5,7 @@
 
 pub mod greeting;
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use platform::clock::Clock;
@@ -37,9 +38,9 @@ pub fn routes() -> OpenApiRouter<AppState> {
         .routes(routes!(greeting::get_greeting))
 }
 
-/// The served router, every edge layer applied.
-pub fn app(state: AppState) -> axum::Router {
-    web::edge::finish(routes(), state).0
+/// The served router, every edge layer applied, reading no request body longer than `request_body_max_bytes`.
+pub fn app(state: AppState, request_body_max_bytes: NonZeroU32) -> axum::Router {
+    web::edge::finish(routes(), state, request_body_max_bytes).0
 }
 
 /// The OpenAPI document of exactly what [`app`] serves.

@@ -1,8 +1,8 @@
-//! The error catalog: one snapshot of every wire code, its status, where it is declared and, for a field code,
-//! the params it declares; one wire code maps to one status and one param list across every catalog; every
+//! The error catalog: one snapshot of every wire code, its status, where it is declared and the params it
+//! declares; one wire code maps to one status and one param list across every catalog; every
 //! param name is one lower-case word, since it is the wire name; and the catalogs listed here are every catalog
 //! the source declares, so a new `wire_errors!` or `field_codes!` enum fails this test until it is listed. A
-//! field code raised without its declared params does not compile: each is a field of its variant.
+//! code raised without its declared params does not compile: each is a field of its variant.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -32,7 +32,7 @@ fn snapshot_text() -> String {
     let mut text: String = rows.iter().map(|r| format!("{}\n", r.line())).collect();
     text.insert_str(
         0,
-        "# wire code -> status (declaring enum); a field code: `-` for the status, then {param: JSON type, ...}. Written by crates/api/tests/api/catalog.rs.\n",
+        "# wire code -> status (declaring enum) {param: JSON type, ...}; a field code has `-` for the status. Written by crates/api/tests/api/catalog.rs.\n",
     );
     text
 }
@@ -68,9 +68,7 @@ fn one_wire_code_declares_one_param_list() {
     let mut lists: BTreeMap<&str, BTreeSet<Vec<(&str, &str)>>> = BTreeMap::new();
     for (_, rows) in listed() {
         for row in rows {
-            if let Some(params) = row.params {
-                lists.entry(row.wire).or_default().insert(params.to_vec());
-            }
+            lists.entry(row.wire).or_default().insert(row.params.to_vec());
         }
     }
     let conflicting: Vec<_> = lists.iter().filter(|(_, l)| l.len() > 1).collect();
@@ -82,7 +80,7 @@ fn every_param_name_is_one_lower_case_word() {
     let names: Vec<&str> = listed()
         .into_iter()
         .flat_map(|(_, rows)| rows)
-        .flat_map(|row| row.params.unwrap_or_default().iter().map(|(name, _)| *name))
+        .flat_map(|row| row.params.iter().map(|(name, _)| *name))
         .collect();
     assert!(!names.is_empty(), "no code declares a param: this check would pass vacuously");
     let bad: Vec<&str> = names.into_iter().filter(|n| !is_one_lower_case_word(n)).collect();
