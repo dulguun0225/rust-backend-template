@@ -137,20 +137,24 @@ function toolchain() {
 /**
  * `cargo metadata --locked` over the workspace, first: a step that resolves without --locked (cargo-deny's did)
  * rewrites a stale Cargo.lock, and every --locked step after it then passes over a lock the commit lacks.
- * Its canary: a workspace whose manifest declares a crate its Cargo.lock lacks must be refused.
+ * Its canary: a workspace whose manifest declares a crate its Cargo.lock lacks must be refused, by the same
+ * command with the same arguments. Not --offline: offline, cargo resolves the canary's crate from the local
+ * index alone, and on a cold cargo home (a CI runner with no cargo cache) it fails "no matching package" before
+ * --locked is ever consulted, so the canary would rest on whatever happened to warm the index.
  */
 function lockfile() {
+  const locked = ['metadata', '--locked', '--format-version', '1'];
   const work = path.join(root, 'target', 'lock-canary');
   fs.rmSync(work, { recursive: true, force: true });
   fs.mkdirSync(path.join(work, 'src'), { recursive: true });
   fs.writeFileSync(path.join(work, 'Cargo.toml'), '[package]\nname = "lock-canary"\nversion = "0.0.0"\nedition = "2024"\npublish = false\n\n[workspace]\n\n[dependencies]\nitoa = "1"\n');
   fs.writeFileSync(path.join(work, 'src', 'lib.rs'), '');
   fs.writeFileSync(path.join(work, 'Cargo.lock'), 'version = 4\n');
-  const canary = captureAll('cargo', ['metadata', '--locked', '--offline', '--format-version', '1'], { cwd: work });
+  const canary = captureAll('cargo', locked, { cwd: work });
   if (canary.status === 0 || !/--locked was passed/.test(canary.stderr)) {
     throw new Fail(`cargo metadata --locked did not refuse a Cargo.lock that lacks a declared crate (exit ${canary.status}):\n${canary.stderr}`);
   }
-  const r = captureAll('cargo', ['metadata', '--locked', '--format-version', '1']);
+  const r = captureAll('cargo', locked);
   if (r.status !== 0) throw new Fail(`Cargo.lock is not current for the manifests; run cargo to update it and commit it:\n${r.stderr}`, r.status);
   console.log('Cargo.lock is current; the canary, a lock that lacks a declared crate, was refused');
 }
